@@ -18,6 +18,8 @@ jobs:
     steps:
     - name: Checkout this repo
       uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.RW_GITHUB_TOKEN }}
 
     - name: Install Munki
       uses: joncrain/macos-pkg-install@v1.0
