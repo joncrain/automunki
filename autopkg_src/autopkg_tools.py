@@ -156,7 +156,7 @@ def create_pull_request(repo, title, body, head, base="main"):
     }
     url = f"https://api.github.com/repos/{repo}/pulls"
     headers = {
-        "Authorization": f"token {os.environ['GH_TOKEN']}",
+        "Authorization": f"token {os.environ['GITHUB_TOKEN']}",
         "Accept": "application/vnd.github.v3+json",
     }
     json_payload = json.dumps(payload)
