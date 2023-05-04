@@ -47,12 +47,12 @@ jobs:
       run: autopkg repo-update all
 
     - name: Run makecatalogs
-      run: /usr/local/munki/makecatalogs munki_repo -s
+      run: /usr/local/munki/makecatalogs ./ -s
 
     - name: Run AutoPkg
       run: |
         pip3 install -r requirements.txt
-        python3 autopkg_tools.py -l recipe_list.json
+        python3 ./autopkg_src/autopkg_tools.py -l ./autopkg_src/recipe_list.json
       env:
         RECIPE: ${{ github.event.inputs.recipe }}
         SLACK_WEBHOOK_TOKEN: ${{ secrets.autopkg_slack_token }}
