@@ -148,13 +148,17 @@ def run_cmd(cmd):
 
 
 def create_pull_request(repo, title, body, head, base="main"):
+    remote_url = repo.remotes.origin.url
+    parts = remote_url.split("/")
+    organization = parts[-2]
+    name = parts[-1].rstrip(".git")
     payload = {
         "title": title,
         "body": body,
         "head": head,
         "base": base,
     }
-    url = f"https://api.github.com/repos/{repo}/pulls"
+    url = f"https://api.github.com/repos/{organization}/{name}/pulls"
     headers = {
         "Authorization": f"token {os.environ['GITHUB_TOKEN']}",
         "Accept": "application/vnd.github.v3+json",
