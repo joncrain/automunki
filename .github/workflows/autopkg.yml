@@ -56,3 +56,4 @@ jobs:
       env:
         RECIPE: ${{ github.event.inputs.recipe }}
         SLACK_WEBHOOK_TOKEN: ${{ secrets.autopkg_slack_token }}
+        GH_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
