@@ -175,7 +175,7 @@ def worktree_add(repo, branch):
     worktree_repo = git.Repo(os.path.join(repo.working_dir, branch))
     worktree_repo.git.fetch()
     if branch in repo.git.branch("--list", "-r"):
-        worktree_repo.git.pull("origin", branch)
+        worktree_repo.git.push("origin", "--delete", branch)
     return worktree_repo
 
 
