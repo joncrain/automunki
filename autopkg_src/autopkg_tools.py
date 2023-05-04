@@ -215,7 +215,7 @@ def handle_recipe(recipe):
         if recipe.results["imported"]:
             print("Imported")
             pkg_info_path = os.path.join(
-                "pkginfo", recipe.results["imported"][0]["pkginfo_path"]
+                "pkgsinfo", recipe.results["imported"][0]["pkginfo_path"]
             )
             worktree_commit(
                 munki_repo,
