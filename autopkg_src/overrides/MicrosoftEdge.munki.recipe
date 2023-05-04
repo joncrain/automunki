@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.MicrosoftEdge</string>
+	<key>Input</key>
+	<dict>
+		<key>CHANNEL</key>
+		<string>Production</string>
+		<key>LOCALE_ID</key>
+		<string>1033</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>MicrosoftEdge</string>
+		<key>PRODUCTID</key>
+		<string>2069148</string>
+		<key>SOFTWARETITLE</key>
+		<string>Edge</string>
+		<key>VERSION</key>
+		<string>latest</string>
+		<key>munki_required_update_name</key>
+		<string></string>
+		<key>pkginfo</key>
+		<dict>
+			<key>blocking_applications</key>
+			<array>
+				<string>Microsoft Edge</string>
+				<string>Microsoft Error Reporting</string>
+				<string>Microsoft AutoUpdate</string>
+			</array>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Web Browsers</string>
+			<key>description</key>
+			<string>Microsoft's Chromium-based browser</string>
+			<key>developer</key>
+			<string>Microsoft</string>
+			<key>display_name</key>
+			<string>Microsoft Edge</string>
+			<key>minimum_os_version</key>
+			<string>10.10.0</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.autopkg.munki.MSEdge</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict>
+			<key>MSOfficeMacURLandUpdateInfoProvider</key>
+			<dict>
+				<key>git_hash</key>
+				<string>642b719956d4e4e8d464ec396ea21b8127ad9855</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/MSOfficeUpdates/MSOfficeMacURLandUpdateInfoProvider.py</string>
+				<key>sha256_hash</key>
+				<string>3920f8fb720b7cd91f42e53c5b32bf8cff269633c7aad0e224d545ba5cc50ff1</string>
+			</dict>
+		</dict>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.autopkg.download.MSEdge</key>
+			<dict>
+				<key>git_hash</key>
+				<string>f33f7baebfa2312a20b523e4cacaa2fe0b62da98</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/MSOfficeUpdates/MSEdge.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>f32c29e3c01a5105128c6a0473b84f857438f85fe5c080945c17fe5bd59405f8</string>
+			</dict>
+			<key>com.github.autopkg.download.MSOfficeMacProduct</key>
+			<dict>
+				<key>git_hash</key>
+				<string>55e47128864841e568cf20ccd2b852fea48faa50</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/MSOfficeUpdates/MSOfficeMacProduct.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>9d98baa020cb9228ff75122bdd7b92a20196cedb9f5983c140e7c1e771cf26cf</string>
+			</dict>
+			<key>com.github.autopkg.munki.MSEdge</key>
+			<dict>
+				<key>git_hash</key>
+				<string>f33f7baebfa2312a20b523e4cacaa2fe0b62da98</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/MSOfficeUpdates/MSEdge.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>d14ac6becdbbd09e5d0bd7e97befe92d3883d666069f07459cc36df14ce8fadc</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

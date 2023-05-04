@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.VLC</string>
+	<key>Input</key>
+	<dict>
+		<key>ARCHITECTURE</key>
+		<string>universal</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>VLC</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Entertainment</string>
+			<key>description</key>
+			<string>VLC is a free and open source cross-platform multimedia player and framework that plays most multimedia files as well as DVD, Audio CD, VCD, and various streaming protocols.</string>
+			<key>developer</key>
+			<string>The VideoLAN Project</string>
+			<key>display_name</key>
+			<string>VLC Media Player</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>supported_architectures</key>
+			<array>
+				<string>arm64</string>
+				<string>x86_64</string>
+			</array>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.autopkg.munki.VLC</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.autopkg.download.VLC</key>
+			<dict>
+				<key>git_hash</key>
+				<string>1b4ba2cfe6d1f6de304bc9c29b57df6602b2e7e6</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/VLC/VLC.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>e74a96c65488d34aabb247c171b57db7fed8afd67b61fffdce8f46bc54d35f18</string>
+			</dict>
+			<key>com.github.autopkg.munki.VLC</key>
+			<dict>
+				<key>git_hash</key>
+				<string>1b4ba2cfe6d1f6de304bc9c29b57df6602b2e7e6</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/VLC/VLC.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>183c9ec4e92d0fd572dacf7bec79b8e3c2c4c93b5dd064e8e2335fa2a43d2922</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

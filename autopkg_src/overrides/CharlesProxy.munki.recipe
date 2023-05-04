@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.CharlesProxy</string>
+	<key>Input</key>
+	<dict>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>CharlesProxy</string>
+		<key>URL</key>
+		<string>https://www.charlesproxy.com/latest.do</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>blocking_applications</key>
+			<array>
+				<string>Charles.app</string>
+			</array>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Utilities</string>
+			<key>description</key>
+			<string>Charles is an HTTP proxy / HTTP monitor / Reverse Proxy that enables a developer to view all of the HTTP and SSL / HTTPS traffic between their machine and the Internet. This includes requests, responses and the HTTP headers (which contain the cookies and caching information).</string>
+			<key>developer</key>
+			<string>XK72</string>
+			<key>display_name</key>
+			<string>Charles</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.autopkg.arubdesu.munki.CharlesProxy</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.autopkg.arubdesu.download.CharlesProxy</key>
+			<dict>
+				<key>git_hash</key>
+				<string>29f9d6a71549ec77ba3ed565f15f23cb0d4ce9b4</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.arubdesu-recipes/CharlesProxy/CharlesProxy.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>6d9674bf1eb7255ef349a3770912a3adf1cb3b03eedc214f5081b9b8465966e1</string>
+			</dict>
+			<key>com.github.autopkg.arubdesu.munki.CharlesProxy</key>
+			<dict>
+				<key>git_hash</key>
+				<string>ac9596ccc81335451cd553b8237ea23ad973cf42</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.arubdesu-recipes/CharlesProxy/CharlesProxy.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>12d882a6c7d455c51c4e78711c94ef88d74d6215fce341cb164b249d0651085c</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

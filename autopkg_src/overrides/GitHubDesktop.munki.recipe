@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.GitHubDesktop</string>
+	<key>Input</key>
+	<dict>
+		<key>BUILD</key>
+		<string>darwin</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>GitHub Desktop</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Development</string>
+			<key>description</key>
+			<string>Desktop app made by GitHub for seamless contribution to git projects.</string>
+			<key>developer</key>
+			<string>GitHub, Inc.</string>
+			<key>display_name</key>
+			<string>GitHub Desktop</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>postinstall_script</key>
+			<string>#!/bin/bash
+
+DEST_DIR="/usr/local/bin"
+
+if [[ ! -d "$DEST_DIR" ]]; then
+    mkdir -p "$DEST_DIR"
+fi
+
+ln -s "/Applications/GitHub Desktop.app/Contents/Resources/app/static/github.sh" "$DEST_DIR/github"
+
+exit 0
+</string>
+			<key>preinstall_script</key>
+			<string>#!/bin/bash
+
+DEST_DIR="/usr/local/bin"
+
+# Remove old symbolic links associated with pre-Electron version of GitHub Desktop.
+if [[ -L "$DEST_DIR/git-lfs" ]]; then
+    rm -f "$DEST_DIR/git-lfs"
+fi
+
+exit 0
+</string>
+			<key>supported_architectures</key>
+			<array>
+				<string>x86_64</string>
+			</array>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.homebysix.munki.GitHubDesktop</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.homebysix.download.GitHubDesktop</key>
+			<dict>
+				<key>git_hash</key>
+				<string>929f09a8dc248349e9ce35f7d519c253298317d1</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.homebysix-recipes/GitHub/GitHubDesktop.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>ddd466175cff624508787263a470f89b7c2dcc517e1d5cc381f59ec06c846012</string>
+			</dict>
+			<key>com.github.homebysix.munki.GitHubDesktop</key>
+			<dict>
+				<key>git_hash</key>
+				<string>d971260da0324bf5d6d7c7c2355b27cb6e76a9c7</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.homebysix-recipes/GitHub/GitHubDesktop.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>24fce5d67fd6556bfaf1792a26fc823d0f4003af9e870e6817bb6e230315183c</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

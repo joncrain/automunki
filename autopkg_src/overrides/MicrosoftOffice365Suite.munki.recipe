@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.MicrosoftOffice365Suite</string>
+	<key>Input</key>
+	<dict>
+		<key>DOWNLOAD_URL_BASE</key>
+		<string>https://go.microsoft.com/fwlink/?linkid=</string>
+		<key>ID</key>
+		<string>525133</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Office2019Suite</string>
+		<key>SOFTWARETITLE1</key>
+		<string>Office</string>
+		<key>SOFTWARETITLE2</key>
+		<string>Suite</string>
+		<key>VENDOR</key>
+		<string>Microsoft</string>
+		<key>pkg_ids_set_optional_true</key>
+		<array>
+			<string>com.microsoft.OneDrive</string>
+		</array>
+		<key>pkginfo</key>
+		<dict>
+			<key>blocking_applications</key>
+			<array>
+				<string>Microsoft Autoupdate</string>
+				<string>Microsoft Outlook</string>
+				<string>Microsoft Excel</string>
+				<string>Microsoft PowerPoint</string>
+				<string>Microsoft Word</string>
+				<string>Microsoft OneNote</string>
+			</array>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Productivity</string>
+			<key>description</key>
+			<string>Microsoft Office Suite includes the latest version of Word, Outlook, Excel, Powerpoint, Word and OneNote</string>
+			<key>developer</key>
+			<string>Microsoft</string>
+			<key>display_name</key>
+			<string>Microsoft Office Suite</string>
+			<key>installer_choices_xml</key>
+			<array>
+				<dict>
+					<key>attributeSetting</key>
+					<integer>0</integer>
+					<key>choiceAttribute</key>
+					<string>selected</string>
+					<key>choiceIdentifier</key>
+					<string>com.microsoft.OneDrive</string>
+				</dict>
+			</array>
+			<key>minimum_os_version</key>
+			<string>11.0</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>preinstall_alert</key>
+			<dict>
+				<key>alert_detail</key>
+				<string>You must contact IT Support to request a license for this software.</string>
+				<key>alert_title</key>
+				<string>Licensed Software</string>
+				<key>cancel_label</key>
+				<string>Cancel</string>
+				<key>ok_label</key>
+				<string>Install</string>
+			</dict>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.rtrouton.munki.MicrosoftOffice365Suite</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict>
+			<key>OfficeSuiteSKULessVersionProvider</key>
+			<dict>
+				<key>git_hash</key>
+				<string>c685110c3fc7992074d18d80f8cbbe6f2b88b881</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.rtrouton-recipes/MicrosoftOffice365Suite/OfficeSuiteSKULessVersionProvider.py</string>
+				<key>sha256_hash</key>
+				<string>2363654dc7d3d494511f86fd30bb66fa393da0ef8871533e7185875dbbdd7ff9</string>
+			</dict>
+		</dict>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.rtrouton.download.MicrosoftOffice365Suite</key>
+			<dict>
+				<key>git_hash</key>
+				<string>f20c76b590938a848c61201567a728d44b328ccc</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.rtrouton-recipes/MicrosoftOffice365Suite/MicrosoftOffice365Suite.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>84ff656c17788f078092c6232350ce918f55f3388201d618546525812af0b57c</string>
+			</dict>
+			<key>com.github.rtrouton.munki.MicrosoftOffice365Suite</key>
+			<dict>
+				<key>git_hash</key>
+				<string>f42fefa3579dd7e5c167ab4f80d8fdbdd4cd99da</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.rtrouton-recipes/MicrosoftOffice365Suite/MicrosoftOffice365Suite.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>58c5c90a408af346d423cc892ab3e06f260dbfd68347623c4932ea2d98c523f2</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

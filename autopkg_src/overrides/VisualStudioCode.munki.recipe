@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.VisualStudioCode</string>
+	<key>Input</key>
+	<dict>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>VisualStudioCode</string>
+		<key>blocking_applications</key>
+		<array>
+			<string>Visual Studio Code</string>
+		</array>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Text Editors</string>
+			<key>description</key>
+			<string>Code combines the streamlined UI of a modern editor with rich code assistance and navigation, and an integrated debugging experience – without the need for a full IDE.</string>
+			<key>developer</key>
+			<string>Microsoft</string>
+			<key>display_name</key>
+			<string>Visual Studio Code</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>postinstall_script</key>
+			<string>#!/bin/bash
+current_user=$(/usr/local/munki/munki-python -c 'from SystemConfiguration import SCDynamicStoreCopyConsoleUser; import sys; username = (SCDynamicStoreCopyConsoleUser(None, None, None) or [None])[0]; username = [username,""][username in [u"loginwindow", None, u""]]; sys.stdout.write(username + "\n");')
+/usr/sbin/chown -R $current_user:admin "/Applications/Visual Studio Code.app"</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.valdore86.munki.visualstudiocode</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.valdore86.download.visualstudiocode</key>
+			<dict>
+				<key>git_hash</key>
+				<string>95653b24d2c8b23d0540cf2dc69616a3596dfba3</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.valdore86-recipes/Visual Studio Code/VisualStudioCode.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>dbcbdeda69f346df5ac49f45a0b029b6a91a76b1cb6785e058293859bb04ae66</string>
+			</dict>
+			<key>com.github.valdore86.munki.visualstudiocode</key>
+			<dict>
+				<key>git_hash</key>
+				<string>5e78a485e908d17b00e4e193927d657b756baae5</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.valdore86-recipes/Visual Studio Code/VisualStudioCode.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>c9c7915ac755a923bf6b28d83654a0699fe56bd01a4b384b4dda0755f8388f3d</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

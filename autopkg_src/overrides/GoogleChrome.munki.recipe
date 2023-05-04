@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.GoogleChrome</string>
+	<key>Input</key>
+	<dict>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>GoogleChrome</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Web Browsers</string>
+			<key>description</key>
+			<string>Chrome is a fast, simple, and secure web browser, built for the modern web.</string>
+			<key>developer</key>
+			<string>Google</string>
+			<key>display_name</key>
+			<string>Google Chrome</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>postinstall_script</key>
+			<string>#!/bin/bash
+current_user=$(/usr/bin/stat -f "%Su" /dev/console)
+/usr/sbin/chown -R $current_user:admin "/Applications/Google Chrome.app"</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.autopkg.munki.google-chrome</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.autopkg.download.googlechrome</key>
+			<dict>
+				<key>git_hash</key>
+				<string>b0efb8ccf082444c2e7f3774134352a3c5dbafc8</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/GoogleChrome/GoogleChrome.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>2bdc3f2e3cbdca9c01181f97f5483554a22c48cc078a9c170e57bb6fd2a4d676</string>
+			</dict>
+			<key>com.github.autopkg.munki.google-chrome</key>
+			<dict>
+				<key>git_hash</key>
+				<string>5f5db38265797f1754def56335de7bfc75811305</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/GoogleChrome/GoogleChrome.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>8fd2feaa1c196109ee3bc4149b2447936782336f913c39875a4ad6c3e6dc4baa</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Crypt</string>
+	<key>Input</key>
+	<dict>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Crypt2</string>
+		<key>PRERELEASE</key>
+		<string>true</string>
+		<key>PYTHON3PATH</key>
+		<string>/usr/local/munki/munki-python</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>RestartAction</key>
+			<string>None</string>
+			<key>blocking_applications</key>
+			<array>
+				<string></string>
+			</array>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>System</string>
+			<key>description</key>
+			<string>Crypt is a Filevault 2 Escrow solution.</string>
+			<key>developer</key>
+			<string>Graham Gilbert</string>
+			<key>display_name</key>
+			<string>Crypt FileVault Escrow</string>
+			<key>minimum_os_version</key>
+			<string>10.14</string>
+			<key>name</key>
+			<string>crypt2</string>
+			<key>preuninstall_script</key>
+			<string>#!/usr/local/munki/munki-python
+
+		# Copyright 2015 Crypt Project.
+		#
+		# Licensed under the Apache License, Version 2.0 (the "License");
+		# you may not use this file except in compliance with the License.
+		# You may obtain a copy of the License at
+		#
+		# http://www.apache.org/licenses/LICENSE-2.0
+		#
+		# Unless required by applicable law or agreed to in writing, software
+		# distributed under the License is distributed on an "AS IS" BASIS,
+		# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+		# See the License for the specific language governing permissions and
+		# limitations under the License.
+
+		import  os,     \
+				sys,     \
+				plistlib,  \
+				platform,   \
+				subprocess
+		from    subprocess import Popen, \
+								PIPE,   \
+								STDOUT
+
+		## Path to system.login.console.plist
+		system_login_console_plist = "/private/var/tmp/system.login.console.plist"
+
+
+		## Mechs that support FV2AuthPlugin
+		fv2_mechs = ["Crypt:Check,privileged","Crypt:CryptGUI","Crypt:Enablement,privileged"]
+
+		def remove_mechs_in_db(db, mech_list):
+			for mech in mech_list:
+				for old_mech in filter(lambda x: mech in x, db['mechanisms']):
+					db['mechanisms'].remove(old_mech)
+			return db
+
+		def set_mechs_in_db(db, mech_list):
+			## Clear away any previous configs
+			db = remove_mechs_in_db(db, mech_list)
+			return db
+
+		def edit_authdb():
+			## Export "system.login.console"
+			cmd = ["/usr/bin/security", "authorizationdb", "read", "system.login.console"]
+			proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+				encoding='utf8')
+			stdout, stderr = proc.communicate()
+			# Even if the command succeeds, there may be an "error" of "YES (0)"
+			if stderr and "YES (0)" not in stderr:
+				sys.exit(f"\n{stderr}")
+			system_login_console = stdout
+			f_c = open(system_login_console_plist, 'w')
+			f_c.write(system_login_console)
+			f_c.close()
+
+			## Parse the plist
+			try:
+				plist_file = open(system_login_console_plist, 'r+b')
+			except:
+				sys.exit("\nCannot open system login console plist")
+			try:
+				plist_contents = plistlib.load(plist_file)
+			except:
+				sys.exit("\nCannot read contents of system login console plist")
+			plist_contents = set_mechs_in_db(plist_contents, fv2_mechs)
+
+			# Empty file before writing back to it
+			plist_file.seek(0)
+			plist_file.truncate()
+			## Write back the changes
+			plistlib.dump(plist_contents, plist_file)
+			plist_file.close()
+
+			try:
+				plist_file = open(system_login_console_plist, "r")
+			except:
+				sys.exit("\nUnable to open system login console plist to read changes")
+			# Avoid str instead of bytes-like error messages
+			lines = plist_file.readlines()
+			plist_data = ''
+			for line in lines:
+				plist_data += line
+			plist_data = plist_data.encode()
+			proc = Popen(["/usr/bin/security", "authorizationdb", "write", "system.login.console"], stdout=PIPE, stdin=PIPE, stderr=PIPE)
+			stdout_data = proc.communicate(input=plist_data)
+			plist_file.close()
+
+		def check_root():
+			if not os.geteuid() == 0:
+				sys.exit("\nOnly root can run this script\n")
+
+		def main(argv):
+			#check_root()
+			edit_authdb()
+
+		if __name__ == '__main__':
+			main(sys.argv)
+			</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.grahamgilbert.Crypt.munki</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.grahamgilbert.Crypt.download</key>
+			<dict>
+				<key>git_hash</key>
+				<string>2b8aaab0256ebc3e07580fda18118a1200bbc853</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.grahamgilbert-recipes/Crypt/Crypt.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>2f562b786ea54a0a2c9695a1704a746aeec036c14c1b6d01a3ab6d4d53cb2f90</string>
+			</dict>
+			<key>com.github.grahamgilbert.Crypt.munki</key>
+			<dict>
+				<key>git_hash</key>
+				<string>865c31b284ea310dcc59dd47bdd240f1f9585f7a</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.grahamgilbert-recipes/Crypt/Crypt.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>9f664c80438278f7132e5d10ff3ea31c5f417b74262e525a865826039e2e81bf</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

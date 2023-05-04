@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Docker</string>
+	<key>Input</key>
+	<dict>
+		<key>ARCHITECTURE</key>
+		<string>x86_64</string>
+		<key>DOWNLOAD_TYPE</key>
+		<string>amd64</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>docker</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Development</string>
+			<key>description</key>
+			<string>Docker for Mac is an easy-to-install desktop app for building, debugging and testing Dockerized apps on a Mac. Docker for Mac is a complete development environment deeply integrated with the MacOS Hypervisor framework, networking and filesystem. Docker for Mac is the fastest and most reliable way to run Docker on a Mac.</string>
+			<key>developer</key>
+			<string>Docker Inc</string>
+			<key>display_name</key>
+			<string>Docker</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>postuninstall_script</key>
+			<string>#!/bin/bash
+#
+# This script just reverses the postinstall operations
+#
+
+# Unload networking
+# (use -F to force this; there are probably better ways to do this
+# but this margin isn't big enough ...)
+/bin/launchctl unload -F /Library/LaunchDaemons/com.docker.vmnetd.plist
+
+rm -f /Library/LaunchDaemons/com.docker.vmnetd.plist
+rm -f /Library/PrivilegedHelperTools/com.docker.vmnetd
+rm -f /var/tmp/com.docker.vmnetd.socket
+
+for tool in docker docker-compose docker-diagnose docker-machine notary; do
+	rm -f /usr/local/bin/${tool}
+done
+</string>
+			<key>supported_architectures</key>
+			<array>
+				<string>%ARCHITECTURE%</string>
+			</array>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.smithjw.munki.Docker</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict>
+			<key>com.github.smithjw.processors/FriendlyPathDeleter</key>
+			<dict>
+				<key>git_hash</key>
+				<string>2e4a63c08157f400040db145d8d8deb64160d192</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.smithjw-recipes/SharedProcessors/FriendlyPathDeleter.py</string>
+				<key>sha256_hash</key>
+				<string>eb9abb47f5c699c98d2cde6273782504015e52e6bde031d8e27dbfa0335139dd</string>
+			</dict>
+		</dict>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.smithjw.download.Docker</key>
+			<dict>
+				<key>git_hash</key>
+				<string>9813059fae221d2f335b7638f06a7457a55c77e1</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.smithjw-recipes/Docker/Docker.download.recipe.yaml</string>
+				<key>sha256_hash</key>
+				<string>ca91e099abcde7e005a530aecabb07c73d3ba578b78aec1a2c5c682ea006db22</string>
+			</dict>
+			<key>com.github.smithjw.munki.Docker</key>
+			<dict>
+				<key>git_hash</key>
+				<string>b7ff916fd6a90929e858e314972c4caf314a2a4d</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.smithjw-recipes/Docker/Docker.munki.recipe.yaml</string>
+				<key>sha256_hash</key>
+				<string>7d532a0a0a5c81ba7e7b762f4efe26def0140d9ff2b29dee1ab494158242c799</string>
+			</dict>
+			<key>com.github.smithjw.pkg.Docker</key>
+			<dict>
+				<key>git_hash</key>
+				<string>9ab1102ede379c664554dd50c9a110b2cc36d0bc</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.smithjw-recipes/Docker/Docker.pkg.recipe.yaml</string>
+				<key>sha256_hash</key>
+				<string>f85c1c65e817f41a74a042c158952e3b1502f0ab132a896acb6a525066a9e712</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

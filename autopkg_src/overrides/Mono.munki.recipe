@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Mono</string>
+	<key>Input</key>
+	<dict>
+		<key>BASE_URL</key>
+		<string>https://www.mono-project.com</string>
+		<key>CHANNEL</key>
+		<string>Visual</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Mono</string>
+		<key>SEARCH_PATTERN</key>
+		<string>(https.*\.pkg).*%CHANNEL%</string>
+		<key>SEARCH_URL</key>
+		<string>%BASE_URL%/download/stable</string>
+		<key>USER_AGENT</key>
+		<string>Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/600.7.12 (KHTML, like Gecko) Version/8.0.7 Safari/600.7.12</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>blocking_applications</key>
+			<array>
+				<string></string>
+			</array>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Development</string>
+			<key>description</key>
+			<string>Mono is an open source implementation of Microsoft's .NET Framework based on the ECMA standards for C# and the Common Language Runtime. A growing family of solutions and an active and enthusiastic contributing community is helping position Mono to become the leading choice for development of cross platform applications.</string>
+			<key>developer</key>
+			<string>Mono Project</string>
+			<key>display_name</key>
+			<string>Mono Framework</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>uk.ac.ox.orchard.munki.Mono</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>uk.ac.ox.orchard.download.Mono</key>
+			<dict>
+				<key>git_hash</key>
+				<string>38a4732dda953fc3a97ef7022892ec7d838577ec</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.orchard-recipes/Mono/Mono.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>959cae26fea89dd706679dfb5d4c851afe21ddf8e520243d53f84abda7d7fb57</string>
+			</dict>
+			<key>uk.ac.ox.orchard.munki.Mono</key>
+			<dict>
+				<key>git_hash</key>
+				<string>f519b3d2e95262588a42bb2a307ab36df3243108</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.orchard-recipes/Mono/Mono.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>2a83f53690a91d11a13627973144a6922d66b252ced565af662efa9336d2f3f1</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

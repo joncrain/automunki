@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Cinema4D</string>
+	<key>Input</key>
+	<dict>
+		<key>AUTHORIZATION_HEADER</key>
+		<string>Bearer vnc8dIg4GY5ALb-ZL9vM4T1HyNDyDpxC</string>
+		<key>CONTENT_TYPE_HEADER</key>
+		<string>application/json;charset=UTF-8</string>
+		<key>DATA_BINARY_CONTENT</key>
+		<string>[{"query":"query contentBlocks($site:[String],$section:[String],$uri:[String]){entries(site:$site,section:$section,uri:$uri){title,slug,id...on pages_general_Entry{contentBlocks{__typename,...on contentBlocks_author_BlockType{author{...on author_author_Entry{fullName,jobTitle,authorBio,authorImage{...on images_Asset{altText,url,height,width,optimizedImages{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio5x3{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio8x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x9{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}}}}}}...on contentBlocks_banner_BlockType{bannerWidth,bannerButtons{...on bannerButtons_BlockType{id,text,custom,style,buttonSize,target,entry{url,slug,uri},}}bannerImageDesktop{...on images_Asset{altText,url,height,width,optimizedImages{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio5x3{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio8x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x9{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}}}bannerImageMobile{...on images_Asset{altText,url,height,width,optimizedImages{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio5x3{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio8x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x9{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}}}}...on contentBlocks_buttons_BlockType{align,buttonsWidth,buttons{...on buttons_BlockType{id,text,entry{url,slug,uri},custom,style,buttonSize,target}}}...on contentBlocks_carousel_BlockType{caption,slides{...on slides_BlockType{id,image{...on images_Asset{altText,url,height,width,ratio16x9{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}}},entry{url,slug,uri},custom,target,overlayText1,overlayText2,}}width}...on contentBlocks_heading_BlockType{size,headingText}...on contentBlocks_htmlSnippet_BlockType{code,}...on contentBlocks_image_BlockType{overlayText1,overlayText2,caption,width,imageUrl,file{...on images_Asset{altText,url,height,width,optimizedImages{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio5x3{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio8x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x9{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}}}}...on contentBlocks_images_BlockType{gridWidth,imagesGridCaption,imagesGrid{...on imagesGrid_BlockType{overlayText1,overlayText2,image{...on images_Asset{altText,url,height,width,optimizedImages{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio5x3{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio8x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x9{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}}}}}}...on contentBlocks_imageWithCopy_BlockType{alignment,imageText,imageWidth,image{...on images_Asset{altText,url,height,width,optimizedImages{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio5x3{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio8x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x5{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}ratio16x9{src,srcset,srcsetWebp,placeholderImage,originalImageWidth,originalImageHeight}}}}...on contentBlocks_quotes_BlockType{quoteText,attribution}...on contentBlocks_richText_BlockType{contentText,alignment}...on contentBlocks_rule_BlockType{ruleWidth}...on contentBlocks_table_BlockType{tableRowStyle,columns{...on columns_BlockType{id,alignment,heading,rows{cell}}}}...on contentBlocks_video_BlockType{videoUrl,caption,width,displayStyle}...on contentBlocks_well_BlockType{heading,copy}}}}}","variables":{"site":"default","section":"pages","uri":"downloads"}}]</string>
+		<key>INSTALL_SCRIPT</key>
+		<string>#!/bin/bash
+
+# Determine working directory
+install_dir=`dirname $0`
+
+# Install Maxon Cinema 4D using the pkg from the resources directory using the flags
+# for R23 installation from https://www.maxon.net/en-us/support/downloads/
+"${install_dir}/Maxon Cinema 4D Full Installer.app/Contents/MacOS/installbuilder.sh" --mode unattended --unattendedmodeui none</string>
+		<key>MAJOR_VERSION</key>
+		<string>25</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Cinema4D</string>
+		<key>UNINSTALL_SCRIPT</key>
+		<string>#!/bin/bash
+
+#Delete the application
+rm -rf /Applications/Maxon\ Cinema\ 4D\ R%MAJOR_VERSION%
+
+#Forget the package receipt
+pkgutil --forget com.maxon.Cinema4D-R%MAJOR_VERSION%.pkg</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>blocking_applications</key>
+			<array>
+				<string>c4dpy.app</string>
+				<string>Cinema 4D.app</string>
+				<string>Cinema 4D Team Render Client.app</string>
+				<string>Cinema 4D Team Render Server.app</string>
+				<string>Cineware.app</string>
+				<string>Commandline.app</string>
+			</array>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Graphics</string>
+			<key>description</key>
+			<string>Easy to learn and extremely powerful: Cinema 4D is the perfect package for all 3D artists who want to achieve breathtaking results fast and hassle-free.</string>
+			<key>developer</key>
+			<string>Maxon</string>
+			<key>display_name</key>
+			<string>Cinema 4D</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>unattended_install</key>
+			<true/>
+			<key>uninstall_method</key>
+			<string>uninstall_script</string>
+			<key>uninstall_script</key>
+			<string>%UNINSTALL_SCRIPT%</string>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.foigus.munki.Cinema4D</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict>
+			<key>com.github.homebysix.FindAndReplace/FindAndReplace</key>
+			<dict>
+				<key>git_hash</key>
+				<string>dc086969ec741e70edcf24774d50fba627732496</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.homebysix-recipes/FindAndReplace/FindAndReplace.py</string>
+				<key>sha256_hash</key>
+				<string>bb19af8502c6531346e06767b128cee20532647d31b529af2deff1136e550bd8</string>
+			</dict>
+		</dict>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.foigus.download.Cinema4D</key>
+			<dict>
+				<key>git_hash</key>
+				<string>5779080fdb3d6b7273dbdc89d080563a24fba808</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.foigus-recipes/Maxon/Cinema4DPerpetual.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>a0839cdc38bebbda9a083733883dd98f511c3b98892e7c8743fd2e1c6e003dd5</string>
+			</dict>
+			<key>com.github.foigus.munki.Cinema4D</key>
+			<dict>
+				<key>git_hash</key>
+				<string>7286a479e610254b0048f8b726915e4baaa6c68a</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.foigus-recipes/Maxon/Cinema4DPerpetual.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>f9226bb9ff1dd3030f3e0806f3716402cd7f9bed4d327655156a6b77a79c0026</string>
+			</dict>
+			<key>com.github.foigus.pkg.Cinema4D</key>
+			<dict>
+				<key>git_hash</key>
+				<string>5779080fdb3d6b7273dbdc89d080563a24fba808</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.foigus-recipes/Maxon/Cinema4DPerpetual.pkg.recipe</string>
+				<key>sha256_hash</key>
+				<string>487e9a5d1b4061ca56ccc283f2fd499fab1f8539368a2ca2d750dd3e0f883e4a</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Rider</string>
+	<key>Input</key>
+	<dict>
+		<key>ARCH_TYPE</key>
+		<string>mac</string>
+		<key>CSV_REQ</key>
+		<string>identifier "com.jetbrains.rider" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "2ZEFAR8TH3"</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Rider</string>
+		<key>PROD_CODE</key>
+		<string>RD</string>
+		<key>SUPPORTED_ARCH</key>
+		<string>x86_64</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Development</string>
+			<key>description</key>
+			<string>A cross-platform .NET IDE based on the IntelliJ platform and ReSharper</string>
+			<key>developer</key>
+			<string>JetBrains</string>
+			<key>display_name</key>
+			<string>Rider</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>supported_architectures</key>
+			<array>
+				<string>%ARCHITECTURE%</string>
+			</array>
+			<key>unattended_install</key>
+			<true/>
+			<key>unattended_uninstall</key>
+			<true/>
+			<key>uninstallable</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.bnpl.autopkg.munki.rider</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.bnpl.autopkg.download.jetbrains</key>
+			<dict>
+				<key>git_hash</key>
+				<string>2421adaf643efcd25a5e6b7b3edea7f76d8629e2</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.bnpl-recipes/JetBrains/JetBrains.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>5a8d144d1b0130509875314a105149e76209a0bed696bb7005c01527938d21fb</string>
+			</dict>
+			<key>com.github.bnpl.autopkg.download.rider</key>
+			<dict>
+				<key>git_hash</key>
+				<string>2421adaf643efcd25a5e6b7b3edea7f76d8629e2</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.bnpl-recipes/JetBrains/Rider.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>0afd351ad6173682a62b5bbcb766f8d11e2315b7fec5b2fd6463073839ba094f</string>
+			</dict>
+			<key>com.github.bnpl.autopkg.munki.rider</key>
+			<dict>
+				<key>git_hash</key>
+				<string>97d583be1f38b3a37fc841fec670ac3176215eb7</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.bnpl-recipes/JetBrains/Rider.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>1b64feffcfcdc5bd9a44aea2096311713662f95e5d001ff2607c32664ff509fb</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

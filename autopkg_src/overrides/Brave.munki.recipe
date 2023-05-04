@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.BraveUniversal</string>
+	<key>Input</key>
+	<dict>
+		<key>APP_FILENAME</key>
+		<string>Brave Browser</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Brave</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Web Browsers</string>
+			<key>description</key>
+			<string>The new Brave browser blocks ads and trackers that slow you down and invade your privacy. Discover a new way of thinking about how the web can work.</string>
+			<key>developer</key>
+			<string>Brave Software Inc.</string>
+			<key>display_name</key>
+			<string>Brave Browser</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.swy.munki.BraveUniversal</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.swy.download.BraveUniversal</key>
+			<dict>
+				<key>git_hash</key>
+				<string>39f03c7d098d0178b003a23efc26896e65f155c9</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.swy-recipes/BraveUniversal/BraveUniversal.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>828189dbb68f1dc1b6f1421738a20dff520a1da9333bce83f065664dc36fedba</string>
+			</dict>
+			<key>com.github.swy.munki.BraveUniversal</key>
+			<dict>
+				<key>git_hash</key>
+				<string>39f03c7d098d0178b003a23efc26896e65f155c9</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.swy-recipes/BraveUniversal/BraveUniversal.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>28bf690789fdb0627d2f05aa0897eb321168a1cc3fa9dc082daa07ddbb2455c3</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

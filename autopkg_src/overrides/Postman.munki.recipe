@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Postman</string>
+	<key>Input</key>
+	<dict>
+		<key>DOWNLOAD_URL</key>
+		<string>https://dl.pstmn.io/download/latest/osx_64</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Postman</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Development</string>
+			<key>description</key>
+			<string>Create and send any HTTP request using the awesome Postman request builder. Write your own test cases to validate response data, response times, and more!</string>
+			<key>developer</key>
+			<string>Postdot Technologies, Inc.</string>
+			<key>display_name</key>
+			<string>Postman</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>preinstall_alert</key>
+			<dict>
+				<key>alert_detail</key>
+				<string>You must contact IT Support to request a license for this software.</string>
+				<key>alert_title</key>
+				<string>Licensed Software</string>
+				<key>cancel_label</key>
+				<string>Cancel</string>
+				<key>ok_label</key>
+				<string>Install</string>
+			</dict>
+			<key>supported_architectures</key>
+			<array>
+				<string>x86_64</string>
+			</array>
+			<key>unattended_install</key>
+			<true/>
+			<key>unattended_uninstall</key>
+			<true/>
+			<key>uninstallable</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.dataJAR-recipes.munki.postman</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.dataJAR-recipes.download.postman</key>
+			<dict>
+				<key>git_hash</key>
+				<string>885ab794db5007bb8d83fd2aa06edbdde3f5b9f7</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.dataJAR-recipes/Postman/Postman.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>8121b22b7a4370a9f49dcd797da13a14564e944b38b7a87066f4de3f0936e7a9</string>
+			</dict>
+			<key>com.github.dataJAR-recipes.munki.postman</key>
+			<dict>
+				<key>git_hash</key>
+				<string>575fa7d279c228bae064fb0f355dd2af38fe5242</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.dataJAR-recipes/Postman/Postman.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>33c2ab8fc69022a46cdbd50207e61a1ca04125eba484b8c8a22f8d2fc476bd73</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

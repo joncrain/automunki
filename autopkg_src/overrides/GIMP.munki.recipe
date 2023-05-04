@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.GIMP</string>
+	<key>Input</key>
+	<dict>
+		<key>ARCH</key>
+		<string>x86_64</string>
+		<key>MUNKI_CATEGORY</key>
+		<string>Graphics</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>GIMP</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>%MUNKI_CATEGORY%</string>
+			<key>description</key>
+			<string>GIMP is the GNU Image Manipulation Program. It is a freely distributed piece of software for such tasks as photo retouching, image composition and image authoring. It works on many operating systems, in many languages.</string>
+			<key>developer</key>
+			<string>The GIMP Team</string>
+			<key>display_name</key>
+			<string>GIMP</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>supported_architectures</key>
+			<array>
+				<string>%ARCH%</string>
+			</array>
+			<key>unattended_install</key>
+			<true/>
+			<key>unattended_uninstall</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>io.github.hjuutilainen.munki.GIMP</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>io.github.hjuutilainen.download.GIMP</key>
+			<dict>
+				<key>git_hash</key>
+				<string>4132b9e72ad33878032b8e7fb056b6b64f7dfd86</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.hjuutilainen-recipes/GIMP/GIMP.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>c89d286fb7c7986b934f2f448dbde8b5507df804703d742ecd38846e16c85ec3</string>
+			</dict>
+			<key>io.github.hjuutilainen.munki.GIMP</key>
+			<dict>
+				<key>git_hash</key>
+				<string>9f59c97e5e21cfa8a0048898c75a002bcbe2c1d5</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.hjuutilainen-recipes/GIMP/GIMP.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>17fc314104b8bfd0b183ad2ff9414c71d5482ea2454ba9075277506295f6c447</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

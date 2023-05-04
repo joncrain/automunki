@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.UnityHub</string>
+	<key>Input</key>
+	<dict>
+		<key>DOWNLOAD_URL</key>
+		<string>https://public-cdn.cloud.unity3d.com/hub/prod/UnityHubSetup.dmg</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>UnityHub</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Development</string>
+			<key>description</key>
+			<string>The Unity Hub is a standalone application that streamlines the way you find, download, and manage your Unity Projects and installations. In addition, you can manually add versions of the Editor that you have already installed on your machine to your Hub. NOTE: this will always install the latest version of the Unity Hub application and keep it updated. If you need specific version(s) for testing make sure to uninstall this version via Managed Software Center.</string>
+			<key>developer</key>
+			<string>Unity</string>
+			<key>display_name</key>
+			<string>Unity Hub</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.dataJAR-recipes.munki.UnityHub</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.dataJAR-recipes.munki.UnityHub</key>
+			<dict>
+				<key>git_hash</key>
+				<string>6e7258608f8e4cd99c0d3c8c035107f779bf216c</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.dataJAR-recipes/Unity3D/UnityHub.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>72d71376c8461366d88cc7654f2ca1dac90124eee0645bd045100ef45808e22b</string>
+			</dict>
+			<key>com.github.dataJAR-recipes.pkg.UnityHub</key>
+			<dict>
+				<key>git_hash</key>
+				<string>fe2812265e177b504f8b12a9b510a0cb8fe83aba</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.dataJAR-recipes/Unity3D/UnityHub.pkg.recipe</string>
+				<key>sha256_hash</key>
+				<string>cd2a14140027a4c5a4d1a0bd0fea97319ca9f5d34e1c76d2298162907169e42b</string>
+			</dict>
+			<key>com.github.hansen-m.download.UnityHub</key>
+			<dict>
+				<key>git_hash</key>
+				<string>32b803f069aae09e323629b8a6151ef7bb4f12c5</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.hansen-m-recipes/Unity3D/UnityHub.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>2ce328c85cbe52f5d23d3b8a4dbea610813ef0907ca79cc79573303b535352e3</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

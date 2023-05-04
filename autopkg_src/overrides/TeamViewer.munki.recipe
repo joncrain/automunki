@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.TeamViewer</string>
+	<key>Input</key>
+	<dict>
+		<key>DOWNLOAD_URL</key>
+		<string>https://download.teamviewer.com/download/TeamViewer.dmg</string>
+		<key>MUNKI_CATEGORY</key>
+		<string>Utilities</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>TeamViewer</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>blocking_applications</key>
+			<array/>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>%MUNKI_CATEGORY%</string>
+			<key>description</key>
+			<string>All-In-One Solution for Remote Access and Support over the Internet.</string>
+			<key>developer</key>
+			<string>TeamViewer GmbH</string>
+			<key>display_name</key>
+			<string>TeamViewer</string>
+			<key>minimum_os_version</key>
+			<string>10.13.6</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>postinstall_script</key>
+			<string>#!/bin/sh
+## postinstall script
+
+# Clean the tmp file created at preinstall phase.
+
+sudo rm -rf /tmp/tvonlystartservice
+			</string>
+			<key>postuninstall_script</key>
+			<string>#!/bin/bash
+rm -rf /Applications/TeamViewer.app
+			</string>
+			<key>preinstall_script</key>
+			<string>#!/bin/sh
+## preinstall script
+
+# Set TeamViewer to only restart the service
+# after installation, achieved by creating the
+# following file
+
+echo "1" &gt; /tmp/tvonlystartservice
+			</string>
+			<key>unattended_install</key>
+			<true/>
+			<key>unattended_uninstall</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>io.github.hjuutilainen.munki.TeamViewer</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict>
+			<key>PBXZPayloadUnpacker</key>
+			<dict>
+				<key>git_hash</key>
+				<string>76bb4f9f9ad4872e6d18bd68783cc366ef6c0d12</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.hjuutilainen-recipes/TeamViewer/PBXZPayloadUnpacker.py</string>
+				<key>sha256_hash</key>
+				<string>3112759b1388e6175c3c6706954afbf1a20aedde3f17ff74ed706149f84b918b</string>
+			</dict>
+		</dict>
+		<key>parent_recipes</key>
+		<dict>
+			<key>io.github.hjuutilainen.download.TeamViewer</key>
+			<dict>
+				<key>git_hash</key>
+				<string>38ebbd69f5770b913be0cd17fe8743426a7d88db</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.hjuutilainen-recipes/TeamViewer/TeamViewer.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>cff3a2ad934cc0ce974b022804949d1ad8230c11201a94d26e7b6dc6b396446b</string>
+			</dict>
+			<key>io.github.hjuutilainen.munki.TeamViewer</key>
+			<dict>
+				<key>git_hash</key>
+				<string>5c52397ed7df1d817aaa3ab088e8aa59650bf075</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.hjuutilainen-recipes/TeamViewer/TeamViewer.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>d73c59b0c5d45fd772f689d0fe224c74c4cbaadde70286a19c87adcac2a97237</string>
+			</dict>
+			<key>io.github.hjuutilainen.pkg.TeamViewer</key>
+			<dict>
+				<key>git_hash</key>
+				<string>5c52397ed7df1d817aaa3ab088e8aa59650bf075</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.hjuutilainen-recipes/TeamViewer/TeamViewer.pkg.recipe</string>
+				<key>sha256_hash</key>
+				<string>00a5dfedd353fda4f4f268140c368cc80a1aab41a67f5b7d2570b5bdc39d3a34</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

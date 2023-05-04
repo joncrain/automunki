@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Fork</string>
+	<key>Input</key>
+	<dict>
+		<key>DOWNLOAD_URL</key>
+		<string>https://git-fork.com/update/files/Fork.dmg</string>
+		<key>MUNKI_CATEGORY</key>
+		<string>Development</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Fork</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>%MUNKI_CATEGORY%</string>
+			<key>description</key>
+			<string>Fork is a fast and friendly git client for Mac</string>
+			<key>developer</key>
+			<string>Dan Pristupov</string>
+			<key>display_name</key>
+			<string>Fork</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>preinstall_alert</key>
+			<dict>
+				<key>alert_detail</key>
+				<string>You must contact IT Support to request a license for this software.</string>
+				<key>alert_title</key>
+				<string>Licensed Software</string>
+				<key>cancel_label</key>
+				<string>Cancel</string>
+				<key>ok_label</key>
+				<string>Install</string>
+			</dict>
+			<key>unattended_install</key>
+			<true/>
+			<key>unattended_uninstall</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>io.github.hjuutilainen.munki.Fork</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>io.github.hjuutilainen.download.Fork</key>
+			<dict>
+				<key>git_hash</key>
+				<string>8586d4846cd183b671a494e2fdf541a3ef0e97a4</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.hjuutilainen-recipes/Fork/Fork.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>5726050e227abc945edb011af5c5c310c140b54226245295dee3933fc0b2cf5f</string>
+			</dict>
+			<key>io.github.hjuutilainen.munki.Fork</key>
+			<dict>
+				<key>git_hash</key>
+				<string>abddbf1b9c9aed50b9f1626f25278eee1f1420c6</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.hjuutilainen-recipes/Fork/Fork.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>f6588ab6fb8d7fdc7e4e47eddc7927e4c5f08a6543f48cc756b089b38aced992</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

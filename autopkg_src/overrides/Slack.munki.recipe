@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Slack</string>
+	<key>Input</key>
+	<dict>
+		<key>DISABLE_CODE_SIGNATURE_VERIFICATION</key>
+		<false/>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>slack</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Communication</string>
+			<key>description</key>
+			<string>Slack is a platform for team communication: everything in one place, instantly searchable, available wherever you go.</string>
+			<key>developer</key>
+			<string>Slack</string>
+			<key>display_name</key>
+			<string>Slack</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>postinstall_script</key>
+			<string>#!/bin/bash
+current_user=$(/usr/local/munki/munki-python -c 'from SystemConfiguration import SCDynamicStoreCopyConsoleUser; import sys; username = (SCDynamicStoreCopyConsoleUser(None, None, None) or [None])[0]; username = [username,""][username in [u"loginwindow", None, u""]]; sys.stdout.write(username + "\n");')
+/usr/sbin/chown -R $current_user:admin /Applications/Slack.app</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.killahquam.munki.slack</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.killahquam.download.slack</key>
+			<dict>
+				<key>git_hash</key>
+				<string>b92ae9dd0c3dfd847be0d2f9bbd9cd9c3de454e0</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.killahquam-recipes/Slack/Slack.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>c18640260720b4320bbe2cf8078f77165f2320b998ece74e7646a24c45e46cc5</string>
+			</dict>
+			<key>com.github.killahquam.munki.slack</key>
+			<dict>
+				<key>git_hash</key>
+				<string>4498bc796d2a730236fee65af03ab6eca8ebe140</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.killahquam-recipes/Slack/Slack.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>92700fc3d44b37f2017bfe6e32c5634d9c681bc5ed84dfa329fa5e993624baf2</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

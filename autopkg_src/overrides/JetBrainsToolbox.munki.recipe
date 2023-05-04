@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.JetBrainsToolbox</string>
+	<key>Input</key>
+	<dict>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>JetBrainsToolbox</string>
+		<key>ARCH</key>
+		<string>mac</string>
+		<key>PLATFORM</key>
+		<string>mac</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Development</string>
+			<key>description</key>
+			<string>Manage your JetBrains tools easily. Save time and effort maintaining your IDEs, by downloading a patch or a set of patches instead of the full package download. Everything updates in the background while you never stop coding.</string>
+			<key>developer</key>
+			<string>JetBrains s.r.o.</string>
+			<key>display_name</key>
+			<string>JetBrains Toolbox</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>supported_architectures</key>
+			<array>
+				<string>x86_64</string>
+			</array>
+			<key>unattended_install</key>
+			<true/>
+			<key>unattended_uninstall</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.autopkg.arubdesu-recipes.munki.JetBrainsToolbox</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.autopkg.arubdesu-recipes.download.JetBrainsToolbox</key>
+			<dict>
+				<key>git_hash</key>
+				<string>ae01458b8c784543fc1fe2f9765046219581806b</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.arubdesu-recipes/JetBrainsToolbox/JetBrainsToolbox.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>8652a3fb67a9f4a0b3b20d7bf480705e2473f16693bce387c14bf467589073a1</string>
+			</dict>
+			<key>com.github.autopkg.arubdesu-recipes.munki.JetBrainsToolbox</key>
+			<dict>
+				<key>git_hash</key>
+				<string>5727c64c605fe8f3e2c2c1a3551659a85afc7c05</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.arubdesu-recipes/JetBrainsToolbox/JetBrainsToolbox.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>4160346b514dc8af7602e56a04f11472b6b46f18321891a9c5cda9a085502037</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

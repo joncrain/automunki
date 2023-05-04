@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Cheetah3D</string>
+	<key>Input</key>
+	<dict>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Cheetah3D</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Graphics</string>
+			<key>description</key>
+			<string>3D modeling, rendering and animation package.</string>
+			<key>developer</key>
+			<string>Martin Wengenmayer</string>
+			<key>display_name</key>
+			<string>Cheetah3D</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.joncrain.munki.Cheetah3D</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.joncrain.download.Cheetah3D</key>
+			<dict>
+				<key>git_hash</key>
+				<string>a578ee68973a17ac1333cf9a0de61ed0763b1b51</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.joncrain-recipes/Cheetah3D/Cheetah3D.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>29cefd54679929fbe3b478391a2f9262bf8174737ce3dcafaf4c8936c18ecd88</string>
+			</dict>
+			<key>com.github.joncrain.munki.Cheetah3D</key>
+			<dict>
+				<key>git_hash</key>
+				<string>a578ee68973a17ac1333cf9a0de61ed0763b1b51</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.joncrain-recipes/Cheetah3D/Cheetah3D.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>1a973cd64b17104fdfd4ed04b8f2a1f955964d430a1950c2abb720c70d7bcb1f</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

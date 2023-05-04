@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.BlueJeans</string>
+	<key>Input</key>
+	<dict>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>BlueJeans</string>
+		<key>SPARKLE_FEED_URL</key>
+		<string>https://swdl.bluejeans.com/desktop-app/mac/ga.appcast.xml</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>blocking_applications</key>
+			<array>
+				<string>Blue Jeans.app/Contents/MacOS/Blue Jeans</string>
+				<string>BlueJeans.app/Contents/MacOS/BlueJeans</string>
+			</array>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Communication</string>
+			<key>description</key>
+			<string>BlueJeans video conferencing application.</string>
+			<key>developer</key>
+			<string>Blue Jeans Network</string>
+			<key>display_name</key>
+			<string>BlueJeans</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>postinstall_script</key>
+			<string>#!/bin/bash
+# Install BlueJeans audio driver and privileged helper tool
+HELPER_SRC="/Applications/BlueJeans.app/Contents/Library/LaunchServices/com.bluejeansnet.PrivilegedHelper"
+HELPER_DST="/Library/PrivilegedHelperTools/com.bluejeansnet.PrivilegedHelper"
+if [[ -f $HELPER_SRC ]]; then
+    /bin/mkdir -pv "/Library/PrivilegedHelperTools/"
+    /bin/cp -v "$HELPER_SRC" "$HELPER_DST"
+fi
+DRIVER_SRC="/Applications/BlueJeans.app/Contents/Resources/BlueJeans Audio.driver"
+DRIVER_DST="/Library/Audio/Plug-Ins/HAL/BlueJeans Audio.driver"
+if [[ -d $DRIVER_SRC ]]; then
+    /bin/mkdir -pv "/Library/Audio/Plug-Ins/HAL/"
+    /bin/cp -Rv "$DRIVER_SRC" "$DRIVER_DST"
+fi
+exit 0
+</string>
+			<key>postuninstall_script</key>
+			<string>#!/bin/bash
+/bin/rm -f "/Library/PrivilegedHelperTools/com.bluejeansnet.PrivilegedHelper"
+/bin/rm -rf "/Library/Audio/Plug-Ins/HAL/BlueJeans Audio.driver"
+</string>
+			<key>preinstall_script</key>
+			<string>#!/bin/bash
+# Remove any existing 1.x version of "Blue Jeans.app"
+/bin/rm -rf "/Applications/Blue Jeans.app"
+</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.homebysix.munki.BlueJeans</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.homebysix.munki.BlueJeans</key>
+			<dict>
+				<key>git_hash</key>
+				<string>ea7f56cf195105643c3e41ca890766aeadf5a15f</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.homebysix-recipes/BlueJeans/BlueJeans.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>9b32c0c0abbeaddd68dd7933c2b92fafeb1383a9dde637815dbe9fa1675ff47c</string>
+			</dict>
+			<key>com.github.moofit-recipes.download.bluejeans</key>
+			<dict>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.moofit-recipes/BlueJeans/bluejeans.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>d98544dfe11d04406a6c09e316a643ce1dfd2fb2f4c705ee0d75906519560f0d</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

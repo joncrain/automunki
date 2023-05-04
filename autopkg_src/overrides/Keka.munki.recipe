@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Keka</string>
+	<key>Input</key>
+	<dict>
+		<key>DOWNLOAD_URL</key>
+		<string>https://d.keka.io/</string>
+		<key>MUNKI_CATEGORY</key>
+		<string>Utilities</string>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Keka</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>%MUNKI_CATEGORY%</string>
+			<key>description</key>
+			<string>Keka is a free file archiver for macOS.</string>
+			<key>developer</key>
+			<string>aOne</string>
+			<key>display_name</key>
+			<string>Keka</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.gerardkok.munki.Keka</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.gerardkok.download.Keka</key>
+			<dict>
+				<key>git_hash</key>
+				<string>e6b8c7214853a0e405d9bc9578a08727831b8a39</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.gerardkok-recipes/Keka/Keka.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>86949c2d43a0a1f375f817f3782edb2c1f14ad424e12ed96edd26093151ac50f</string>
+			</dict>
+			<key>com.github.gerardkok.munki.Keka</key>
+			<dict>
+				<key>git_hash</key>
+				<string>e6b8c7214853a0e405d9bc9578a08727831b8a39</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.gerardkok-recipes/Keka/Keka.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>1f3a1e31225adb8381b6e45c88f20c971263a2c1cb101f5e32b1cc7e8d15ee1d</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

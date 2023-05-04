@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Cyberduck</string>
+	<key>Input</key>
+	<dict>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string></string>
+		<key>NAME</key>
+		<string>Cyberduck</string>
+		<key>SPARKLE_FEED_URL</key>
+		<string>https://version.cyberduck.io/changelog.rss</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>test</string>
+			</array>
+			<key>category</key>
+			<string>Utilities</string>
+			<key>description</key>
+			<string>With an easy to use interface, connect to FTP, SFTP, WebDAV, Amazon S3, Google Storage, Windows Azure, Rackspace Cloud Files and even Google Docs.</string>
+			<key>developer</key>
+			<string>iterate GmbH</string>
+			<key>display_name</key>
+			<string>Cyberduck</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.autopkg.munki.Cyberduck</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.autopkg.download.Cyberduck</key>
+			<dict>
+				<key>git_hash</key>
+				<string>c9fac2f0894ecab4a60b544bd9fd204fa0a561fe</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/Cyberduck/Cyberduck.download.recipe</string>
+				<key>sha256_hash</key>
+				<string>54a1740bef5711a9cda12c2acad8e103bacd4528411ad4e98ac908c308279149</string>
+			</dict>
+			<key>com.github.autopkg.munki.Cyberduck</key>
+			<dict>
+				<key>git_hash</key>
+				<string>7d9536743d34cc3ee2363873008d31cace611a7d</string>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/Cyberduck/Cyberduck.munki.recipe</string>
+				<key>sha256_hash</key>
+				<string>432a6ca2957aee1d572c7ae3a3e8feca11bea5dab989858286bbc6e39a7770ac</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>
