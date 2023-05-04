@@ -58,7 +58,7 @@ current_user=$(/usr/bin/stat -f "%Su" /dev/console)
 				<key>path</key>
 				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/GoogleChrome/GoogleChrome.munki.recipe</string>
 				<key>sha256_hash</key>
-				<string>8fd2feaa1c196109ee3bc4149b2447936782336f913c39875a4ad6c3e6dc4baa</string>
+				<string>8fd2feaa1c19d6109ee3bc4149b2447936782336f913c39875a4ad6c3e6dc4baa</string>
 			</dict>
 		</dict>
 	</dict>
