@@ -150,8 +150,8 @@ def run_cmd(cmd):
 def create_pull_request(repo, title, body, head, base="main"):
     remote_url = repo.remotes.origin.url
     parts = remote_url.split("/")
-    organization = parts[-2]
-    name = parts[-1][:-4]
+    organization = parts[-2].replace(".git", "")
+    name = parts[-1]
     payload = {
         "title": title,
         "body": body,
@@ -210,7 +210,7 @@ def handle_recipe(recipe):
     if recipe.verified in (True, None):
         recipe.run()
         if recipe.results["imported"]:
-            print("Imported")
+            logging.info(f"Imported {recipe.name} {recipe.updated_version}")
             pkg_info_path = os.path.join(
                 "pkgsinfo", recipe.results["imported"][0]["pkginfo_path"]
             )
@@ -260,19 +260,19 @@ def main():
     )
 
     if recipes is None:
-        print("Recipe --list or RECIPE not provided!")
+        logging.fatal("Recipe --list or RECIPE not provided!")
         sys.exit(1)
 
     recipes = parse_recipes(recipes, action_recipe)
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(handle_recipe, recipe) for recipe in recipes]
         for future in concurrent.futures.as_completed(futures):
             try:
                 result = future.result()
-                print(result)
+                logging.info(result)
             except Exception as exc:
-                print(f"Recipe execution failed: {exc}")
+                logging.warn(f"Recipe execution failed: {exc}")
 
 
 if __name__ == "__main__":

@@ -45,9 +45,6 @@ jobs:
       run: |
         for repo in $(cat ./autopkg_src/repo_list.txt); do autopkg repo-add "$repo"; done
 
-    - name: Update AutoPkg Repos
-      run: autopkg repo-update all
-
     - name: Run makecatalogs
       run: /usr/local/munki/makecatalogs ./ -s
 
