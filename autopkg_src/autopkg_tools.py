@@ -226,7 +226,7 @@ def handle_recipe(recipe):
             body = f"Updated { recipe.name } to { recipe.updated_version }"
             create_pull_request(munki_repo, title, body, recipe.branch)
     # slack_alert(recipe, opts)
-    return
+    return recipe
 
 
 def parse_recipes(recipes, action_recipe=None):
@@ -292,7 +292,7 @@ def slack_alert(data, url):
 
     response = requests.post(url, data=json.dumps(data), headers=headers)
     if response.status_code != 200:
-        logging.warn(
+        logging.warning(
             f"WARNING: Request to slack returned an error {response.status_code}, the response is:\n{response.text}"
         )
 
@@ -324,7 +324,7 @@ def main():
                 logging.info(result)
                 results[result["name"]] = result["updated_version"]
             except Exception as exc:
-                logging.warn(f"Recipe execution failed: {exc}")
+                logging.warning(f"Recipe execution failed: {exc}")
     slack_alert(slack_summary_block(results), SUMMARY_WEBHOOK_TOKEN)
 
 
