@@ -28,12 +28,13 @@ import sys
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
+from time import time
 from urllib.parse import urljoin
 
 
 import git
 
-SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK_TOKEN", None)
+SUMMARY_WEBHOOK_TOKEN = os.environ.get("SUMMARY_WEBHOOK_TOKEN", None)
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
@@ -246,6 +247,56 @@ def parse_recipes(recipes, action_recipe=None):
     return map(Recipe, r_list)
 
 
+def slack_summary_block(applications):
+    fields = [
+        {"title": "Application", "short": True, "value": app}
+        for app in applications.keys()
+    ]
+    fields += [
+        {"title": "Version", "short": True, "value": version}
+        for version in applications.values()
+    ]
+    block = {
+        "blocks": [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": ":new: The following items have been updated",
+                    "emoji": True,
+                },
+            },
+            {"type": "divider"},
+        ],
+        "attachments": [
+            {
+                "mrkdwn_in": ["text"],
+                "color": "00FF00",
+                "ts": time(),
+                "fields": fields,
+                "footer": "Autopkg Automated Run",
+                "footer_icon": "https://avatars.slack-edge.com/2020-10-30/1451262020951_7067702535522f0c569b_48.png",
+            }
+        ],
+    }
+    return block
+
+
+def slack_alert(data, url):
+    if not url:
+        print("Skipping Slack notification - webhook is missing!")
+        return
+
+    byte_length = str(sys.getsizeof(data))
+    headers = {"Content-Type": "application/json", "Content-Length": byte_length}
+
+    response = requests.post(url, data=json.dumps(data), headers=headers)
+    if response.status_code != 200:
+        logging.warn(
+            f"WARNING: Request to slack returned an error {response.status_code}, the response is:\n{response.text}"
+        )
+
+
 def main():
     parser = ArgumentParser(description="Wrap AutoPkg with git support.")
     parser.add_argument(
@@ -264,15 +315,17 @@ def main():
         sys.exit(1)
 
     recipes = parse_recipes(recipes, action_recipe)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = [executor.submit(handle_recipe, recipe) for recipe in recipes]
         for future in concurrent.futures.as_completed(futures):
             try:
                 result = future.result()
                 logging.info(result)
+                results[result["name"]] = result["updated_version"]
             except Exception as exc:
                 logging.warn(f"Recipe execution failed: {exc}")
+    slack_alert(slack_summary_block(results), SUMMARY_WEBHOOK_TOKEN)
 
 
 if __name__ == "__main__":

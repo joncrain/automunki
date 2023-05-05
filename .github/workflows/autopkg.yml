@@ -56,7 +56,15 @@ jobs:
         RECIPE: ${{ github.event.inputs.recipe }}
         SLACK_WEBHOOK_TOKEN: ${{ secrets.autopkg_slack_token }}
         GITHUB_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
+        SUMMARY_WEBHOOK_TOKEN: ${{ secrets.SUMMARY_WEBHOOK_TOKEN }}
 
     - name: Push packages to Storage Bucket
+      if: always()
       run: |
         ls -la ./pkgs
+        # Upload to S3 example
+        # aws s3 sync ./pkgs s3://$AWS_S3_BUCKET --delete
+      env:
+        AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
