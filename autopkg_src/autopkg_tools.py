@@ -31,7 +31,6 @@ from pathlib import Path
 import git
 
 SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK_TOKEN", None)
-RECIPE_TO_RUN = os.environ.get("RECIPE", None)
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
@@ -168,20 +167,14 @@ def create_pull_request(repo, title, body, head, base="main"):
     return response.json()
 
 
-def worktree_add(repo, branch):
-    """Add a worktree for the branch and return the repo object"""
+def worktree_commit(repo, branch, file_changes, commit_message):
+    """Commit changes to a worktree and push to origin"""
     logging.debug(f"Adding worktree for {branch}")
     repo.git.worktree("add", branch, "-b", branch)
     worktree_repo = git.Repo(os.path.join(repo.working_dir, branch))
     worktree_repo.git.fetch()
     if branch in repo.git.branch("--list", "-r"):
         worktree_repo.git.push("origin", "--delete", branch)
-    return worktree_repo
-
-
-def worktree_commit(repo, branch, file_changes, commit_message):
-    """Commit changes to a worktree and push to origin"""
-    worktree_repo = worktree_add(repo, branch)
     logging.debug(f"Committing {file_changes} to {branch}")
     for file_change in file_changes:
         logging.debug(
@@ -213,7 +206,7 @@ def handle_recipe(recipe):
         )
         title = (f"feat: Update trust for { recipe.name }",)
         body = (recipe.results["message"],)
-        create_pull_request(repo, title, body, branch_name)
+        create_pull_request(munki_repo, title, body, branch_name)
     if recipe.verified in (True, None):
         recipe.run()
         if recipe.results["imported"]:
@@ -230,14 +223,14 @@ def handle_recipe(recipe):
 
             title = f"feat: Update { recipe.name } to { recipe.updated_version }"
             body = f"Updated { recipe.name } to { recipe.updated_version }"
-            create_pull_request(repo, title, body, recipe.branch)
+            create_pull_request(munki_repo, title, body, recipe.branch)
     # slack_alert(recipe, opts)
     return
 
 
-def parse_recipes(recipes):
+def parse_recipes(recipes, action_recipe=None):
     recipe_list = []
-    if RECIPE_TO_RUN:
+    if action_recipe:
         for recipe in recipes:
             ext = os.path.splitext(recipe)[1]
             if ext != ".recipe":
@@ -266,14 +259,16 @@ def main():
 
     (opts, _) = parser.parse_args()
 
+    action_recipe = os.environ.get("RECIPE", None)
+
     recipes = (
-        RECIPE_TO_RUN.split(", ") if RECIPE_TO_RUN else opts.list if opts.list else None
+        action_recipe.split(", ") if action_recipe else opts.list if opts.list else None
     )
 
     if recipes is None:
-        print("Recipe --list or RECIPE_TO_RUN not provided!")
+        print("Recipe --list or RECIPE not provided!")
         sys.exit(1)
-    recipes = parse_recipes(recipes)
+    recipes = parse_recipes(recipes, action_recipe)
     threads = []
 
     for recipe in recipes:
