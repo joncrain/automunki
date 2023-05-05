@@ -15,6 +15,8 @@
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import concurrent.futures
+import contextlib
 import json
 import logging
 import os
@@ -23,10 +25,11 @@ import requests
 import shutil
 import subprocess
 import sys
-import threading
+from argparse import ArgumentParser
 from datetime import datetime
-from optparse import OptionParser
 from pathlib import Path
+from urllib.parse import urljoin
+
 
 import git
 
@@ -140,30 +143,27 @@ class Recipe(object):
 
 def run_cmd(cmd):
     logging.debug(f"Running { ' '.join(cmd)}")
-    run = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output, err = run.communicate()
-    exit_code = run.wait()
-    return output, err, exit_code
+    run = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return run.stdout, run.stderr, run.returncode
 
 
 def create_pull_request(repo, title, body, head, base="main"):
     remote_url = repo.remotes.origin.url
     parts = remote_url.split("/")
     organization = parts[-2]
-    name = parts[-1].rstrip(".git")
+    name = parts[-1][:-4]
     payload = {
         "title": title,
         "body": body,
         "head": head,
         "base": base,
     }
-    url = f"https://api.github.com/repos/{organization}/{name}/pulls"
+    url = urljoin(f"https://api.github.com/repos/{organization}/{name}/", "pulls")
     headers = {
         "Authorization": f"token {os.environ['GITHUB_TOKEN']}",
         "Accept": "application/vnd.github.v3+json",
     }
-    json_payload = json.dumps(payload)
-    response = requests.post(url, headers=headers, data=json_payload)
+    response = requests.post(url, headers=headers, json=payload)
     return response.json()
 
 
@@ -171,23 +171,23 @@ def worktree_commit(repo, branch, file_changes, commit_message):
     """Commit changes to a worktree and push to origin"""
     logging.debug(f"Adding worktree for {branch}")
     repo.git.worktree("add", branch, "-b", branch)
-    worktree_repo = git.Repo(os.path.join(repo.working_dir, branch))
+    worktree_path = Path(repo.working_dir) / branch
+    worktree_repo = git.Repo(worktree_path)
+    worktree_remote = worktree_repo.remotes[0].name
     worktree_repo.git.fetch()
     if branch in repo.git.branch("--list", "-r"):
-        worktree_repo.git.push("origin", "--delete", branch)
+        worktree_repo.git.push(worktree_remote, "--delete", branch)
     logging.debug(f"Committing {file_changes} to {branch}")
     for file_change in file_changes:
-        logging.debug(
-            f"Copying {file_change} from {repo.working_dir} to {worktree_repo.working_dir}"
-        )
-        shutil.copy(
-            f"{repo.working_dir}/{file_change}",
-            f"{worktree_repo.working_dir}/{file_change}",
-        )
-        worktree_repo.index.add([f"{worktree_repo.working_dir}/{file_change}"])
+        src_path = Path(repo.working_dir) / file_change
+        dest_path = worktree_path / file_change
+        logging.debug(f"Copying {src_path} to {dest_path}")
+        shutil.copy(src_path, dest_path)
+        worktree_repo.index.add([dest_path])
     worktree_repo.index.commit(commit_message)
-    worktree_repo.git.push("--set-upstream", "origin", branch)
-    repo.git.worktree("remove", branch, "-f")
+    worktree_repo.git.push("--set-upstream", worktree_remote, branch)
+    with contextlib.suppress(Exception):
+        repo.git.worktree("remove", branch, "-f")
 
 
 def handle_recipe(recipe):
@@ -204,8 +204,8 @@ def handle_recipe(recipe):
         worktree_commit(
             munki_repo, branch_name, [recipe.path], f"Update trust for {recipe.name}"
         )
-        title = (f"feat: Update trust for { recipe.name }",)
-        body = (recipe.results["message"],)
+        title = f"feat: Update trust for { recipe.name }"
+        body = recipe.results["message"]
         create_pull_request(munki_repo, title, body, branch_name)
     if recipe.verified in (True, None):
         recipe.run()
@@ -229,14 +229,8 @@ def handle_recipe(recipe):
 
 
 def parse_recipes(recipes, action_recipe=None):
-    recipe_list = []
     if action_recipe:
-        for recipe in recipes:
-            ext = os.path.splitext(recipe)[1]
-            if ext != ".recipe":
-                recipe_list.append(f"{recipe}.recipe")
-            else:
-                recipe_list.append(recipe)
+        r_list = [r + ".recipe" if not r.endswith(".recipe") else r for r in recipes]
     else:
         ext = os.path.splitext(recipes)[1]
         if ext == ".json":
@@ -244,43 +238,41 @@ def parse_recipes(recipes, action_recipe=None):
         elif ext == ".plist":
             parser = plistlib.load
         else:
-            print(f'Invalid run list extension "{ ext }" (expected plist or json)')
-            sys.exit(1)
+            raise ValueError(
+                f'Invalid run list extension "{ext}" (expected plist or json)'
+            )
         with open(recipes, "rb") as f:
-            recipe_list = parser(f)
-    return map(Recipe, recipe_list)
+            r_list = parser(f)
+    return map(Recipe, r_list)
 
 
 def main():
-    parser = OptionParser(description="Wrap AutoPkg with git support.")
-    parser.add_option(
+    parser = ArgumentParser(description="Wrap AutoPkg with git support.")
+    parser.add_argument(
         "-l", "--list", help="Path to a plist or JSON list of recipe names."
     )
-
-    (opts, _) = parser.parse_args()
+    args = parser.parse_args()
 
     action_recipe = os.environ.get("RECIPE", None)
 
     recipes = (
-        action_recipe.split(", ") if action_recipe else opts.list if opts.list else None
+        action_recipe.split(", ") if action_recipe else args.list if args.list else None
     )
 
     if recipes is None:
         print("Recipe --list or RECIPE not provided!")
         sys.exit(1)
+
     recipes = parse_recipes(recipes, action_recipe)
-    threads = []
 
-    for recipe in recipes:
-        # handle_recipe(recipe, opts)
-        thread = threading.Thread(target=handle_recipe(recipe))
-        threads.append(thread)
-
-    for thread in threads:
-        thread.start()
-
-    for thread in threads:
-        thread.join()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(handle_recipe, recipe) for recipe in recipes]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                result = future.result()
+                print(result)
+            except Exception as exc:
+                print(f"Recipe execution failed: {exc}")
 
 
 if __name__ == "__main__":
