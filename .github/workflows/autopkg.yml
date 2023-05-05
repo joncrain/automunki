@@ -56,3 +56,7 @@ jobs:
         RECIPE: ${{ github.event.inputs.recipe }}
         SLACK_WEBHOOK_TOKEN: ${{ secrets.autopkg_slack_token }}
         GITHUB_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
+
+    - name: Push packages to Storage Bucket
+      run: |
+        ls -la ./pkgs

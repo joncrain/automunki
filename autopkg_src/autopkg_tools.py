@@ -42,7 +42,7 @@ class Recipe(object):
     def __init__(self, path):
         self.path = os.path.join("autopkg_src/overrides", path)
         self.error = False
-        self.results = {}
+        self.results = {"imported": [], "failed": []}
         self.updated = False
         self.verified = None
 
