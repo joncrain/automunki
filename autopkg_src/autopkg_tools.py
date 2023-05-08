@@ -321,7 +321,7 @@ def main():
         for future in concurrent.futures.as_completed(futures):
             try:
                 recipe_result = future.result()
-                logging.info(result)
+                logging.info(recipe_result)
                 results[recipe_result.name] = recipe_result.updated_version
             except Exception as exc:
                 logging.warning(f"Recipe execution failed: {exc}")
