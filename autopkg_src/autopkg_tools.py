@@ -320,12 +320,13 @@ def main():
         futures = [executor.submit(handle_recipe, recipe) for recipe in recipes]
         for future in concurrent.futures.as_completed(futures):
             try:
-                result = future.result()
+                recipe_result = future.result()
                 logging.info(result)
-                results[result["name"]] = result["updated_version"]
+                results[recipe_result.name] = recipe_result.updated_version
             except Exception as exc:
                 logging.warning(f"Recipe execution failed: {exc}")
-    slack_alert(slack_summary_block(results), SUMMARY_WEBHOOK_TOKEN)
+    if results:
+        slack_alert(slack_summary_block(results), SUMMARY_WEBHOOK_TOKEN)
 
 
 if __name__ == "__main__":
