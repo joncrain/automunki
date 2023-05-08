@@ -38,6 +38,7 @@ jobs:
         defaults write com.github.autopkg FAIL_RECIPES_WITHOUT_TRUST_INFO -bool YES
         defaults write com.github.autopkg MUNKI_REPO "$GITHUB_WORKSPACE"
         defaults write com.github.autopkg GITHUB_TOKEN "${{ secrets.GITHUB_TOKEN }}"
+        mkdir ./pkgs
         git config --global user.name "runner"
         git config --global user.email "runner@githubactions.local"
 

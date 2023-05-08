@@ -248,14 +248,9 @@ def parse_recipes(recipes, action_recipe=None):
 
 
 def slack_summary_block(applications):
-    fields = [
-        {"title": "Application", "short": True, "value": app}
-        for app in applications.keys()
-    ]
-    fields += [
-        {"title": "Version", "short": True, "value": version}
-        for version in applications.values()
-    ]
+    app_string = "\n".join(applications.keys())
+    app_version = "\n".join(applications.values())
+
     block = {
         "blocks": [
             {
@@ -273,7 +268,18 @@ def slack_summary_block(applications):
                 "mrkdwn_in": ["text"],
                 "color": "00FF00",
                 "ts": time(),
-                "fields": fields,
+                "fields": [
+                    {
+                        "title": "Application",
+                        "short": True,
+                        "value": app_string,
+                    },
+                    {
+                        "title": "Version",
+                        "short": True,
+                        "value": app_version,
+                    },
+                ],
                 "footer": "Autopkg Automated Run",
                 "footer_icon": "https://avatars.slack-edge.com/2020-10-30/1451262020951_7067702535522f0c569b_48.png",
             }
@@ -322,7 +328,8 @@ def main():
             try:
                 recipe_result = future.result()
                 logging.info(recipe_result)
-                results[recipe_result.name] = recipe_result.updated_version
+                if recipe_result.results["imported"]:
+                    results[recipe_result.name] = recipe_result.updated_version
             except Exception as exc:
                 logging.warning(f"Recipe execution failed: {exc}")
     if results:
