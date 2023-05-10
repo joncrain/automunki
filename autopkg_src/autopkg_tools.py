@@ -36,7 +36,7 @@ import git
 
 SUMMARY_WEBHOOK_TOKEN = os.environ.get("SUMMARY_WEBHOOK_TOKEN", None)
 
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 
 class Recipe(object):
@@ -225,7 +225,9 @@ def handle_recipe(recipe):
             title = f"feat: Update { recipe.name } to { recipe.updated_version }"
             body = f"Updated { recipe.name } to { recipe.updated_version }"
             create_pull_request(munki_repo, title, body, recipe.branch)
-    # slack_alert(recipe, opts)
+    slack_payload = slack_recipe_block(recipe)
+    if slack_payload:
+        slack_alert(slack_payload)
     return recipe
 
 
@@ -245,6 +247,56 @@ def parse_recipes(recipes, action_recipe=None):
         with open(recipes, "rb") as f:
             r_list = parser(f)
     return map(Recipe, r_list)
+
+
+def slack_recipe_block(recipe):
+    if not recipe.verified:
+        task_title = (
+            f"*{ recipe.name } failed trust verification* \n"
+            + recipe.results["message"]
+        )
+    elif recipe.error:
+        task_title = f"*Failed to import { recipe.name }* \n"
+        if not recipe.results["failed"]:
+            task_title += "Unknown error"
+        else:
+            task_title += f'Error: {recipe.results["failed"][0]["message"]} \n'
+            if "No releases found for repo" in task_title:
+                # Just no updates
+                return
+    elif recipe.updated:
+        task_title = (
+            f"*Imported {recipe.name} {str(recipe.updated_version)}* \n"
+            + f'*Catalogs:* {recipe.results["imported"][0]["catalogs"]} \n'
+            + f'*Package Path:* `{recipe.results["imported"][0]["pkg_repo_path"]}` \n'
+            + f'*Pkginfo Path:* `{recipe.results["imported"][0]["pkginfo_path"]}` \n'
+        )
+    else:
+        # Also no updates
+        return
+
+    try:
+        icon = recipe.plist["Input"]["pkginfo"]["icon_name"]
+    except:
+        icon = recipe.name + ".png"
+
+    block = {
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": task_title,
+                },
+                "accessory": {
+                    "type": "image",
+                    "image_url": f"https://{MUNKI_WEBSITE}/icons/{icon}",
+                    "alt_text": recipe.name,
+                },
+            }
+        ]
+    }
+    return block
 
 
 def slack_summary_block(applications):
@@ -299,7 +351,7 @@ def slack_alert(data, url):
     response = requests.post(url, data=json.dumps(data), headers=headers)
     if response.status_code != 200:
         logging.warning(
-            f"WARNING: Request to slack returned an error {response.status_code}, the response is:\n{response.text}"
+            f"WARNING: Request to slack returned an error {response.status_code}, the response is: {response.text}"
         )
 
 
@@ -322,7 +374,7 @@ def main():
 
     recipes = parse_recipes(recipes, action_recipe)
     results = {}
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
         futures = [executor.submit(handle_recipe, recipe) for recipe in recipes]
         for future in concurrent.futures.as_completed(futures):
             try:
