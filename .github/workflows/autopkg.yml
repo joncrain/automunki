@@ -78,7 +78,7 @@ jobs:
 
     - name: Gather Logs
       run: |
-        /bin/tar -czvf /var/tmp/autopkg.tar.gz /var/tmp/autopkg/
+        /usr/bin/tar -czvf /var/tmp/autopkg.tar.gz /var/tmp/autopkg/
 
     - name: Upload log file
       uses: actions/upload-artifact@v3
