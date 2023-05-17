@@ -39,6 +39,7 @@ jobs:
         /usr/bin/defaults write com.github.autopkg MUNKI_REPO "$GITHUB_WORKSPACE"
         /usr/bin/defaults write com.github.autopkg GITHUB_TOKEN "${{ secrets.RW_REPO_TOKEN }}"
         /bin/mkdir ./pkgs/
+        /bin/mkdir -p /var/tmp/autopkg/
         /usr/bin/git config --global user.name "runner"
         /usr/bin/git config --global user.email "runner@githubactions.local"
         /bin/mkdir -p /Users/runner/Library/AutoPkg/
@@ -75,9 +76,12 @@ jobs:
     #   run: |
     #     aws s3 sync ./pkgs/ s3://${{secrets.AWS_S3_BUCKET}}/pkgs/
 
+    - name: Gather Logs
+      run: |
+        /bin/tar -czvf /var/tmp/autopkg.tar.gz /var/tmp/autopkg/
 
     - name: Upload log file
       uses: actions/upload-artifact@v3
       with:
         name: autopkg_log
-        path: /var/tmp/autopkg.log
+        path: /var/tmp/autopkg.tar.gz

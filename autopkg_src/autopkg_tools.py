@@ -38,7 +38,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s %(module)-20s %(levelname)-8s %(message)s",
     datefmt="%m-%d %H:%M",
-    filename=f"/var/tmp/autopkg.log",
+    filename=f"/var/tmp/autopkg/autopkg.log",
     filemode="w",
 )
 console = logging.StreamHandler()
@@ -231,7 +231,7 @@ def main():
 
     recipes = parse_recipes(recipes, action_recipe)
     results = {}
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(handle_recipe, recipe) for recipe in recipes]
         for future in concurrent.futures.as_completed(futures):
             try:
