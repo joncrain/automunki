@@ -16,27 +16,39 @@
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import concurrent.futures
-import contextlib
 import json
 import logging
 import os
 import plistlib
-import requests
-import shutil
 import subprocess
 import sys
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
-from time import time
-from urllib.parse import urljoin
-
 
 import git
+import psutil
 
-SUMMARY_WEBHOOK_TOKEN = os.environ.get("SUMMARY_WEBHOOK_TOKEN", None)
+SLACK_WEBHOOK = os.environ.get("SUMMARY_WEBHOOK_TOKEN", None)
+SUMMARY_WEBHOOK = os.environ.get("SUMMARY_WEBHOOK_TOKEN", None)
+MUNKI_WEBSITE = os.environ.get("MUNKI_WEBSITE", "munki.example.com")
 
-logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(module)-20s %(levelname)-8s %(message)s",
+    datefmt="%m-%d %H:%M",
+    filename=f"/var/tmp/autopkg.log",
+    filemode="w",
+)
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+formatter = logging.Formatter("%(module)-20s: %(levelname)-8s %(message)s")
+console.setFormatter(formatter)
+logging.getLogger("").addHandler(console)
+
+from git_utils import create_pull_request, worktree_commit
+from slack_utils import slack_alert, slack_recipe_block, slack_summary_block
 
 
 class Recipe(object):
@@ -45,7 +57,7 @@ class Recipe(object):
         self.error = False
         self.results = {"imported": [], "failed": []}
         self.updated = False
-        self.verified = None
+        self.verified = False
 
         self._keys = None
         self._has_run = False
@@ -55,14 +67,12 @@ class Recipe(object):
         if self._keys is None:
             with open(self.path, "rb") as f:
                 self._keys = plistlib.load(f)
-
         return self._keys
 
     @property
     def branch(self):
         return (
-            "{}_{}".format(self.name, self.updated_version)
-            .strip()
+            f"autopkg-{self.name}_{self.updated_version}".strip()
             .replace(" ", "")
             .replace(")", "-")
             .replace("(", "-")
@@ -72,7 +82,6 @@ class Recipe(object):
     def updated_version(self):
         if not self.results or not self.results["imported"]:
             return None
-
         return self.results["imported"][0]["version"].strip().replace(" ", "")
 
     @property
@@ -83,62 +92,59 @@ class Recipe(object):
         cmd = ["/usr/local/bin/autopkg", "verify-trust-info", self.path, "-vvv"]
         output, err, exit_code = run_cmd(cmd)
         if exit_code == 0:
+            logging.info(f"Verified trust info for {self.name}")
             self.verified = True
         else:
+            logging.info(f"Verify trust info failed for {self.name}")
             err = err.decode()
             self.results["message"] = err
-            self.verified = False
         return self.verified
 
     def update_trust_info(self):
+        logging.info(f"Updating trust info for {self.name}")
         cmd = ["/usr/local/bin/autopkg", "update-trust-info", self.path]
         output, err, exit_code = run_cmd(cmd)
-        return output
+        logging.debug(f"Output: {output}")
+        return
 
     def _parse_report(self, report):
         with open(report, "rb") as f:
             report_data = plistlib.load(f)
-
         failed_items = report_data.get("failures", [])
         imported_items = []
         if report_data["summary_results"]:
-            # This means something happened
             munki_results = report_data["summary_results"].get(
                 "munki_importer_summary_result", {}
             )
             imported_items.extend(munki_results.get("data_rows", []))
-
         return {"imported": imported_items, "failed": failed_items}
 
     def run(self):
-        if self.verified == False:
+        logging.info(f"Running {self.name}")
+        logging.info(f"The current cpu percent is {psutil.cpu_percent(4)}%")
+        report_path = f"/var/tmp/{self.name}.plist"
+        Path(report_path).touch()
+        cmd = [
+            "/usr/local/bin/autopkg",
+            "run",
+            self.path,
+            "-vvvvv",
+            "--post",
+            "io.github.hjuutilainen.VirusTotalAnalyzer/VirusTotalAnalyzer",
+            "--report-plist",
+            report_path,
+        ]
+        output, err, exit_code = run_cmd(cmd)
+        logging.debug(f"Output: {output.decode()}")
+        if err:
+            logging.info(f"Error running {self.name}: {err.decode()}")
             self.error = True
-            self.results["failed"] = True
-            self.results["imported"] = ""
-        else:
-            report = f"/tmp/{self.name}.plist"
-            if not os.path.isfile(report):
-                # Letting autopkg create them has led to errors on github runners
-                Path(report).touch()
-            cmd = [
-                "/usr/local/bin/autopkg",
-                "run",
-                self.path,
-                "-v",
-                "--post",
-                "io.github.hjuutilainen.VirusTotalAnalyzer/VirusTotalAnalyzer",
-                "--report-plist",
-                report,
-            ]
-            output, err, exit_code = run_cmd(cmd)
-            if err:
-                self.error = True
-                self.results["failed"] = True
-                self.results["imported"] = ""
-            self._has_run = True
-            self.results = self._parse_report(report)
-            if not self.results["failed"] and not self.error and self.updated_version:
-                self.updated = True
+            self.results = {"failed": True, "imported": ""}
+        logging.info(f"Finished running {self.name}")
+        self._has_run = True
+        self.results = self._parse_report(report_path)
+        if self.updated_version and not self.error and not self.results["failed"]:
+            self.updated = True
         return self.results
 
 
@@ -148,67 +154,12 @@ def run_cmd(cmd):
     return run.stdout, run.stderr, run.returncode
 
 
-def create_pull_request(repo, title, body, head, base="main"):
-    remote_url = repo.remotes.origin.url
-    parts = remote_url.split("/")
-    organization = parts[-2].replace(".git", "")
-    name = parts[-1]
-    payload = {
-        "title": title,
-        "body": body,
-        "head": head,
-        "base": base,
-    }
-    url = urljoin(f"https://api.github.com/repos/{organization}/{name}/", "pulls")
-    headers = {
-        "Authorization": f"token {os.environ['GITHUB_TOKEN']}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.post(url, headers=headers, json=payload)
-    return response.json()
-
-
-def worktree_commit(repo, branch, file_changes, commit_message):
-    """Commit changes to a worktree and push to origin"""
-    logging.debug(f"Adding worktree for {branch}")
-    repo.git.worktree("add", branch, "-b", branch)
-    worktree_path = Path(repo.working_dir) / branch
-    worktree_repo = git.Repo(worktree_path)
-    worktree_remote = worktree_repo.remotes[0].name
-    worktree_repo.git.fetch()
-    if branch in repo.git.branch("--list", "-r"):
-        worktree_repo.git.push(worktree_remote, "--delete", branch)
-    logging.debug(f"Committing {file_changes} to {branch}")
-    for file_change in file_changes:
-        src_path = Path(repo.working_dir) / file_change
-        dest_path = worktree_path / file_change
-        logging.debug(f"Copying {src_path} to {dest_path}")
-        shutil.copy(src_path, dest_path)
-        worktree_repo.index.add([dest_path])
-    worktree_repo.index.commit(commit_message)
-    worktree_repo.git.push("--set-upstream", worktree_remote, branch)
-    with contextlib.suppress(Exception):
-        repo.git.worktree("remove", branch, "-f")
-
-
 def handle_recipe(recipe):
-    logging.debug(f"Handling {recipe.name}")
+    logging.info(f"Handling {recipe.name}")
     repo = os.environ.get("GITHUB_REPOSITORY", None)
     munki_repo = git.Repo(os.getenv("GITHUB_WORKSPACE", "./"))
     recipe.verify_trust_info()
-    if recipe.verified is False:
-        logging.debug(f"Updating trust for {recipe.name}")
-        recipe.update_trust_info()
-        branch_name = (
-            f"update_trust-{recipe.name}-{datetime.now().strftime('%Y-%m-%d')}"
-        )
-        worktree_commit(
-            munki_repo, branch_name, [recipe.path], f"Update trust for {recipe.name}"
-        )
-        title = f"feat: Update trust for { recipe.name }"
-        body = recipe.results["message"]
-        create_pull_request(munki_repo, title, body, branch_name)
-    if recipe.verified in (True, None):
+    if recipe.verified:
         recipe.run()
         if recipe.results["imported"]:
             logging.info(f"Imported {recipe.name} {recipe.updated_version}")
@@ -225,9 +176,21 @@ def handle_recipe(recipe):
             title = f"feat: Update { recipe.name } to { recipe.updated_version }"
             body = f"Updated { recipe.name } to { recipe.updated_version }"
             create_pull_request(munki_repo, title, body, recipe.branch)
-    slack_payload = slack_recipe_block(recipe)
+    else:
+        logging.info(f"Updating trust for {recipe.name}")
+        recipe.update_trust_info()
+        branch_name = (
+            f"update_trust-{recipe.name}-{datetime.now().strftime('%Y-%m-%d')}"
+        )
+        worktree_commit(
+            munki_repo, branch_name, [recipe.path], f"Update trust for {recipe.name}"
+        )
+        title = f"feat: Update trust for { recipe.name }"
+        body = recipe.results["message"]
+        create_pull_request(munki_repo, title, body, branch_name)
+    slack_payload = slack_recipe_block(recipe, MUNKI_WEBSITE)
     if slack_payload:
-        slack_alert(slack_payload)
+        slack_alert(slack_payload, SLACK_WEBHOOK)
     return recipe
 
 
@@ -249,112 +212,6 @@ def parse_recipes(recipes, action_recipe=None):
     return map(Recipe, r_list)
 
 
-def slack_recipe_block(recipe):
-    if not recipe.verified:
-        task_title = (
-            f"*{ recipe.name } failed trust verification* \n"
-            + recipe.results["message"]
-        )
-    elif recipe.error:
-        task_title = f"*Failed to import { recipe.name }* \n"
-        if not recipe.results["failed"]:
-            task_title += "Unknown error"
-        else:
-            task_title += f'Error: {recipe.results["failed"][0]["message"]} \n'
-            if "No releases found for repo" in task_title:
-                # Just no updates
-                return
-    elif recipe.updated:
-        task_title = (
-            f"*Imported {recipe.name} {str(recipe.updated_version)}* \n"
-            + f'*Catalogs:* {recipe.results["imported"][0]["catalogs"]} \n'
-            + f'*Package Path:* `{recipe.results["imported"][0]["pkg_repo_path"]}` \n'
-            + f'*Pkginfo Path:* `{recipe.results["imported"][0]["pkginfo_path"]}` \n'
-        )
-    else:
-        # Also no updates
-        return
-
-    try:
-        icon = recipe.plist["Input"]["pkginfo"]["icon_name"]
-    except:
-        icon = recipe.name + ".png"
-
-    block = {
-        "blocks": [
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": task_title,
-                },
-                "accessory": {
-                    "type": "image",
-                    "image_url": f"https://{MUNKI_WEBSITE}/icons/{icon}",
-                    "alt_text": recipe.name,
-                },
-            }
-        ]
-    }
-    return block
-
-
-def slack_summary_block(applications):
-    app_string = "\n".join(applications.keys())
-    app_version = "\n".join(applications.values())
-
-    block = {
-        "blocks": [
-            {
-                "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": ":new: The following items have been updated",
-                    "emoji": True,
-                },
-            },
-            {"type": "divider"},
-        ],
-        "attachments": [
-            {
-                "mrkdwn_in": ["text"],
-                "color": "00FF00",
-                "ts": time(),
-                "fields": [
-                    {
-                        "title": "Application",
-                        "short": True,
-                        "value": app_string,
-                    },
-                    {
-                        "title": "Version",
-                        "short": True,
-                        "value": app_version,
-                    },
-                ],
-                "footer": "Autopkg Automated Run",
-                "footer_icon": "https://avatars.slack-edge.com/2020-10-30/1451262020951_7067702535522f0c569b_48.png",
-            }
-        ],
-    }
-    return block
-
-
-def slack_alert(data, url):
-    if not url:
-        print("Skipping Slack notification - webhook is missing!")
-        return
-
-    byte_length = str(sys.getsizeof(data))
-    headers = {"Content-Type": "application/json", "Content-Length": byte_length}
-
-    response = requests.post(url, data=json.dumps(data), headers=headers)
-    if response.status_code != 200:
-        logging.warning(
-            f"WARNING: Request to slack returned an error {response.status_code}, the response is: {response.text}"
-        )
-
-
 def main():
     parser = ArgumentParser(description="Wrap AutoPkg with git support.")
     parser.add_argument(
@@ -374,18 +231,17 @@ def main():
 
     recipes = parse_recipes(recipes, action_recipe)
     results = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+    with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = [executor.submit(handle_recipe, recipe) for recipe in recipes]
         for future in concurrent.futures.as_completed(futures):
             try:
                 recipe_result = future.result()
-                logging.info(recipe_result)
                 if recipe_result.results["imported"]:
                     results[recipe_result.name] = recipe_result.updated_version
             except Exception as exc:
                 logging.warning(f"Recipe execution failed: {exc}")
     if results:
-        slack_alert(slack_summary_block(results), SUMMARY_WEBHOOK_TOKEN)
+        slack_alert(slack_summary_block(results), SUMMARY_WEBHOOK)
 
 
 if __name__ == "__main__":

@@ -33,18 +33,20 @@ jobs:
 
     - name: Configure AutoPkg
       run: |
-        defaults write com.github.autopkg RECIPE_OVERRIDE_DIRS "$GITHUB_WORKSPACE"/autopkg_src/overrides/
-        defaults write com.github.autopkg RECIPE_REPO_DIR "$GITHUB_WORKSPACE"/autopkg_src/repos/
-        defaults write com.github.autopkg FAIL_RECIPES_WITHOUT_TRUST_INFO -bool YES
-        defaults write com.github.autopkg MUNKI_REPO "$GITHUB_WORKSPACE"
-        defaults write com.github.autopkg GITHUB_TOKEN "${{ secrets.GITHUB_TOKEN }}"
-        mkdir ./pkgs
-        git config --global user.name "runner"
-        git config --global user.email "runner@githubactions.local"
+        /usr/bin/defaults write com.github.autopkg RECIPE_OVERRIDE_DIRS "$GITHUB_WORKSPACE"/autopkg_src/overrides/
+        /usr/bin/defaults write com.github.autopkg RECIPE_REPO_DIR "$GITHUB_WORKSPACE"/autopkg_src/repos/
+        /usr/bin/defaults write com.github.autopkg FAIL_RECIPES_WITHOUT_TRUST_INFO -bool YES
+        /usr/bin/defaults write com.github.autopkg MUNKI_REPO "$GITHUB_WORKSPACE"
+        /usr/bin/defaults write com.github.autopkg GITHUB_TOKEN "${{ secrets.RW_REPO_TOKEN }}"
+        /bin/mkdir ./pkgs/
+        /usr/bin/git config --global user.name "runner"
+        /usr/bin/git config --global user.email "runner@githubactions.local"
+        /bin/mkdir -p /Users/runner/Library/AutoPkg/
+        # /bin/ln -s "$GITHUB_WORKSPACE"/autopkg_src/Recipes /Users/runner/Library/AutoPkg/
 
     - name: Configure AutoPkg Repos
       run: |
-        for repo in $(cat ./autopkg_src/repo_list.txt); do autopkg repo-add "$repo"; done
+        for repo in $(/bin/cat ./autopkg_src/repo_list.txt); do /usr/local/bin/autopkg repo-add "$repo"; done
 
     - name: Run makecatalogs
       run: /usr/local/munki/makecatalogs ./ -s
@@ -55,17 +57,27 @@ jobs:
         python3 ./autopkg_src/autopkg_tools.py -l ./autopkg_src/recipe_list.json
       env:
         RECIPE: ${{ github.event.inputs.recipe }}
-        SLACK_WEBHOOK_TOKEN: ${{ secrets.autopkg_slack_token }}
-        GITHUB_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
         SUMMARY_WEBHOOK_TOKEN: ${{ secrets.SUMMARY_WEBHOOK_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
+        MUNKI_WEBSITE: ${{ secrets.MUNKI_WEBSITE }}
 
-    - name: Push packages to Storage Bucket
-      if: always()
-      run: |
-        ls -la ./pkgs
-        # Upload to S3 example
-        # aws s3 sync ./pkgs s3://$AWS_S3_BUCKET --delete
-      env:
-        AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    # - name: Configure AWS credentials
+    #   if: always()
+    #   uses: aws-actions/configure-aws-credentials@v2
+    #   with:
+    #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    #     aws-region: us-east-1
+
+
+    # - name: Push packages to Storage Bucket
+    #   if: always()
+    #   run: |
+    #     aws s3 sync ./pkgs/ s3://${{secrets.AWS_S3_BUCKET}}/pkgs/
+
+
+    - name: Upload log file
+      uses: actions/upload-artifact@v3
+      with:
+        name: autopkg_log
+        path: /var/tmp/autopkg.log
