@@ -122,7 +122,7 @@ class Recipe(object):
     def run(self):
         logging.info(f"Running {self.name}")
         logging.info(f"The current cpu percent is {psutil.cpu_percent(4)}%")
-        report_path = f"/var/tmp/{self.name}.plist"
+        report_path = f"/var/tmp/autopkg/{self.name}.plist"
         Path(report_path).touch()
         cmd = [
             "/usr/local/bin/autopkg",
