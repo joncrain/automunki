@@ -1,0 +1,14 @@
+{
+    "AdobeReader.munki.recipe": {
+        "cache_timestamp": "2023-06-22 16:24:52.244454",
+        "download_metadata": [
+            {
+                "url": "https://ardownload2.adobe.com/pub/adobe/reader/mac/AcrobatDC/2300320201/AcroRdrDC_2300320201_MUI.dmg",
+                "pathname": "/Users/runner/Library/AutoPkg/Cache/local.munki.AdobeReader/downloads/AdobeReaderDC.dmg",
+                "etag": "\"17cc9207-5fd605af13c00\"",
+                "last_modified": "Mon, 05 Jun 2023 11:39:28 GMT",
+                "dl_size_in_bytes": "399282695"
+            }
+        ]
+    }
+}
