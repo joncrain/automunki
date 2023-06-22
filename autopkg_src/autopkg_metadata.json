@@ -322,12 +322,12 @@
         ]
     },
     "VLC.munki.recipe": {
-        "cache_timestamp": "2023-06-22 17:36:32.533778",
+        "cache_timestamp": "2023-06-22 19:20:20.014768",
         "download_metadata": [
             {
                 "url": "https://get.videolan.org/vlc/3.0.18/macosx/vlc-3.0.18-universal.dmg",
                 "pathname": "/Users/runner/Library/AutoPkg/Cache/local.munki.VLC/downloads/VLC-3.0.18.dmg",
-                "etag": "\"63487b9d-5093559\"",
+                "etag": "\"5093559-5eaf0c039358c\"",
                 "last_modified": "Thu, 13 Oct 2022 20:57:01 GMT",
                 "dl_size_in_bytes": "84489561"
             }
