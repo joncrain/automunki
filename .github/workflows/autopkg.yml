@@ -68,7 +68,7 @@ jobs:
         /usr/bin/git checkout -b autopkg-metadata
         /usr/bin/git add "$GITHUB_WORKSPACE"/autopkg_src/autopkg_metadata.json
         /usr/bin/git commit -m "Update autopkg_metadata.json"
-        /usr/bin/git push
+        /usr/bin/git push --set-upstream origin autopkg-metadata
       env:
         GITHUB_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
 
