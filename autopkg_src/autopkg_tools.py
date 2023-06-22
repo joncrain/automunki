@@ -25,6 +25,7 @@ import subprocess
 import sys
 from argparse import ArgumentParser
 from datetime import datetime
+from fnmatch import fnmatch
 from pathlib import Path
 
 import git
@@ -109,17 +110,106 @@ class Recipe(object):
         logging.debug(f"Output: {output}")
         return
 
+    def _get_pkg_version_from_receipt(self, new_dl):
+        """Some processors don't return summary results with version/pkg_path
+        This func will attempt to locate a receipt newer than the located DL
+        and extract both version and pkg_path details for Slack notification"""
+        # Set receipt pkg + version to None to return if we can't derive our version below
+        receipt_pkg = None
+        receipt_version = None
+        # Get modification time of new DMG download
+        dl_mod_time = os.path.getmtime(new_dl)
+        # Get cache dir for build
+        parent_path = Path(new_dl).parents[1]
+
+        logging.debug(f"Trying to get receipt data from provided DL {new_dl}")
+
+        # Check if receipts dir exists
+        if os.path.exists(os.path.join(parent_path, "receipts")):
+            for receipt in os.scandir(os.path.join(parent_path, "receipts")):
+                # If we find a receipt with a newer mod time than our download, likely the receipt for our new build
+                if os.path.getmtime(receipt) > dl_mod_time:
+                    logging.debug(f"Found new receipt at {receipt}")
+                    receipt_plist = _plist_pal(receipt)
+                    logging.debug(f"Read in plist with contents {receipt_plist}")
+                    try:
+                        # Get "version" value from receipts plist and assign
+                        receipt_version = [
+                            values.get("version")
+                            for plist in receipt_plist
+                            for values in plist.values()
+                            if isinstance(values, dict) and "version" in values.keys()
+                        ][-1]
+                        logging.debug(f"Found {receipt_version}")
+                    except IndexError:
+                        continue
+                    try:
+                        # Get "pkg_path" value from receipts plist and assign
+                        receipt_pkg = [
+                            values.get("pkg_path")
+                            for plist in receipt_plist
+                            for values in plist.values()
+                            if isinstance(values, dict) and "pkg_path" in values.keys()
+                        ][-1]
+                    except IndexError:
+                        continue
+        return receipt_pkg, receipt_version
+
     def _parse_report(self, report):
-        with open(report, "rb") as f:
-            report_data = plistlib.load(f)
+        report_data = _plist_pal(report)
         failed_items = report_data.get("failures", [])
-        imported_items = []
-        if report_data["summary_results"]:
-            munki_results = report_data["summary_results"].get(
-                "munki_importer_summary_result", {}
+        downloaded_items = []
+        built_items = []
+        # If True, this means something happened
+        if report_data.get("summary_results"):
+            # Wildcard search for "pkg" in results to get key name since there are multiple possibilities
+            pkg_summary_key = "".join(
+                [
+                    x
+                    for x in report_data["summary_results"].keys()
+                    if fnmatch(x, "*pkg*")
+                ]
             )
-            imported_items.extend(munki_results.get("data_rows", []))
-        return {"imported": imported_items, "failed": failed_items}
+            pkg_results = report_data.get("summary_results").get(pkg_summary_key, {})
+            built_items.extend(pkg_results.get("data_rows", []))
+            dl_results = report_data.get("summary_results").get(
+                "url_downloader_summary_result", {}
+            )
+            downloaded_items.extend(dl_results.get("data_rows", []))
+            # There are some cases where a new package was built, but processors like FlatPkgPacker don't show in results
+            if dl_results and not pkg_results:
+                # If so, look at the download path and identify if the DL'd file was a pkg and report it like a build
+                if fringe_build := "".join(
+                    [
+                        next(iter(x.values()))
+                        for x in dl_results.get("data_rows")
+                        if fnmatch(next(iter(x.values())), "*pkg*")
+                    ]
+                ):
+                    receipt_pkg, receipt_version = self._get_pkg_version_from_receipt(
+                        fringe_build
+                    )
+
+                    # Append pkg_path and version if values are not None
+                    # Elif append download as pkg_path and version if populated
+                    # Else append download as pkg_path and version will be Unknown
+                    if receipt_pkg and receipt_version:
+                        built_items.append(
+                            {"pkg_path": receipt_pkg, "version": receipt_version}
+                        )
+                    elif receipt_version:
+                        logging.debug("Appending built items with version")
+                        built_items.append(
+                            {"pkg_path": fringe_build, "version": receipt_version}
+                        )
+                    else:
+                        built_items.append({"pkg_path": fringe_build})
+
+        return {
+            "built": built_items,
+            "downloaded": downloaded_items,
+            "failed": failed_items,
+        }
 
     def run(self):
         logging.info(f"Running {self.name}")
@@ -216,6 +306,14 @@ def parse_recipes(recipes, action_recipe=None):
         with open(recipes, "rb") as f:
             r_list = parser(f)
     return map(Recipe, r_list)
+
+
+def _plist_pal(path):
+    """Function accepts argument of path to .plist file as `path`
+    Returns plist formatted as dict"""
+    with open(path, "rb") as f:
+        loaded_plist = plistlib.load(f)
+        return loaded_plist
 
 
 def main():
