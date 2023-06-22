@@ -4,6 +4,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # Copyright (c) tig <https://6fx.eu/>.
 # Copyright (c) Gusto, Inc.
+# Copyright 2023 Kandji, Inc.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 #
@@ -49,6 +50,7 @@ logging.getLogger("").addHandler(console)
 
 from git_utils import create_pull_request, worktree_commit
 from slack_utils import slack_alert, slack_recipe_block, slack_summary_block
+from cache_utils import load_cached_attributes, create_file_and_attributes
 
 
 class Recipe(object):
@@ -90,7 +92,7 @@ class Recipe(object):
 
     def verify_trust_info(self):
         cmd = ["/usr/local/bin/autopkg", "verify-trust-info", self.path, "-vvv"]
-        output, err, exit_code = run_cmd(cmd)
+        _, err, exit_code = run_cmd(cmd)
         if exit_code == 0:
             logging.info(f"Verified trust info for {self.name}")
             self.verified = True
@@ -103,7 +105,7 @@ class Recipe(object):
     def update_trust_info(self):
         logging.info(f"Updating trust info for {self.name}")
         cmd = ["/usr/local/bin/autopkg", "update-trust-info", self.path]
-        output, err, exit_code = run_cmd(cmd)
+        output, _, _ = run_cmd(cmd)
         logging.debug(f"Output: {output}")
         return
 
@@ -131,10 +133,12 @@ class Recipe(object):
             "-vvvvv",
             "--post",
             "io.github.hjuutilainen.VirusTotalAnalyzer/VirusTotalAnalyzer",
+            "--post",
+            "io.kandji.cachedata/CacheRecipeMetadata",
             "--report-plist",
             report_path,
         ]
-        output, err, exit_code = run_cmd(cmd)
+        output, err, _ = run_cmd(cmd)
         logging.debug(f"Output: {output.decode()}")
         if err:
             logging.info(f"Error running {self.name}: {err.decode()}")
@@ -151,6 +155,8 @@ class Recipe(object):
 def run_cmd(cmd):
     logging.debug(f"Running { ' '.join(cmd)}")
     run = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    logging.debug(f"Stdout: {run.stdout.decode()}")
+    logging.debug(f"Stderr: {run.stderr.decode()}")
     return run.stdout, run.stderr, run.returncode
 
 
@@ -187,7 +193,7 @@ def handle_recipe(recipe):
         )
         title = f"feat: Update trust for { recipe.name }"
         body = recipe.results["message"]
-        create_pull_request(munki_repo, title, body, branch_name)
+        # create_pull_request(munki_repo, title, body, branch_name)
     slack_payload = slack_recipe_block(recipe, MUNKI_WEBSITE)
     if slack_payload:
         slack_alert(slack_payload, SLACK_WEBHOOK)
@@ -217,6 +223,14 @@ def main():
     parser.add_argument(
         "-l", "--list", help="Path to a plist or JSON list of recipe names."
     )
+    parser.add_argument(
+        "-c",
+        "--cache",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Load and write previously cached metadata/xattrs for comparison; save out new metadata post-run.",
+    )
     args = parser.parse_args()
 
     action_recipe = os.environ.get("RECIPE", None)
@@ -228,6 +242,9 @@ def main():
     if recipes is None:
         logging.fatal("Recipe --list or RECIPE not provided!")
         sys.exit(1)
+    if args.cache:
+        attributes_dict = load_cached_attributes("./autopkg_src/autopkg_metadata.json")
+        create_file_and_attributes(attributes_dict)
 
     recipes = parse_recipes(recipes, action_recipe)
     results = {}

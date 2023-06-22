@@ -1,3 +1,5 @@
 pkgs/
 catalogs/
 test.py
+__pychache__/
+.vscode/
