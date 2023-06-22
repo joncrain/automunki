@@ -156,18 +156,18 @@
 				<key>git_hash</key>
 				<string>2b8aaab0256ebc3e07580fda18118a1200bbc853</string>
 				<key>path</key>
-				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.grahamgilbert-recipes/Crypt/Crypt.download.recipe</string>
+				<string>~/work/automunki/automunki/autopkg_src/repos/com.github.autopkg.grahamgilbert-recipes/Crypt/Crypt.download.recipe</string>
 				<key>sha256_hash</key>
 				<string>2f562b786ea54a0a2c9695a1704a746aeec036c14c1b6d01a3ab6d4d53cb2f90</string>
 			</dict>
 			<key>com.github.grahamgilbert.Crypt.munki</key>
 			<dict>
 				<key>git_hash</key>
-				<string>865c31b284ea310dcc59dd47bdd240f1f9585f7a</string>
+				<string>6f4d53f4a8eab7f24306ed7865d6a79941a89027</string>
 				<key>path</key>
-				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.grahamgilbert-recipes/Crypt/Crypt.munki.recipe</string>
+				<string>~/work/automunki/automunki/autopkg_src/repos/com.github.autopkg.grahamgilbert-recipes/Crypt/Crypt.munki.recipe</string>
 				<key>sha256_hash</key>
-				<string>9f664c80438278f7132e5d10ff3ea31c5f417b74262e525a865826039e2e81bf</string>
+				<string>6e8b63591e7ddc37ce93046ea3120b17a4d0f9db5f24652530f2f421aa4bf989</string>
 			</dict>
 		</dict>
 	</dict>
