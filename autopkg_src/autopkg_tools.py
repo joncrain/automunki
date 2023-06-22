@@ -243,7 +243,7 @@ def main():
         logging.fatal("Recipe --list or RECIPE not provided!")
         sys.exit(1)
     if args.cache:
-        attributes_dict = load_cached_attributes("./autopkg_src/autopkg_metadata.json")
+        attributes_dict = load_cached_attributes("/private/tmp/autopkg_metadata.json")
         create_file_and_attributes(attributes_dict)
 
     recipes = parse_recipes(recipes, action_recipe)

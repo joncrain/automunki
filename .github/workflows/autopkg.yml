@@ -44,6 +44,7 @@ jobs:
         /usr/bin/git config --global user.email "runner@githubactions.local"
         /bin/mkdir -p /Users/runner/Library/AutoPkg/
         /bin/ln -s "$GITHUB_WORKSPACE"/autopkg_src/Recipes /Users/runner/Library/AutoPkg/
+        /bin/cp "$GITHUB_WORKSPACE"/autopkg_src/autopkg_metadata.json /private/tmp/autopkg_metadata.json
 
     - name: Configure AutoPkg Repos
       run: |
