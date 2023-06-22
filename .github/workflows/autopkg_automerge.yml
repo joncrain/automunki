@@ -1,0 +1,29 @@
+name: AutoMerge
+
+on:
+  push:
+    branches:
+      - "autopkg-**"
+      - "autopromote-**"
+
+jobs:
+  merge-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout MunkiRepo (this repo)
+        uses: actions/checkout@v3
+
+      - name: Get Branch Name
+        run: echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
+
+      - name: Merge the AutoPkg Branch
+        uses: everlytic/branch-merge@c4a244dc23143f824ae6c022a10732566cb8e973 # v1.1.5
+        with:
+          github_token: ${{ secrets.RW_REPO_TOKEN }}
+          source_ref: ${{ github.ref }}
+          target_branch: "main"
+          commit_message_template: "feat: Merged ${{ env.BRANCH_NAME }}"
+
+      - name: Delete Branch
+        run: |
+          git push origin --delete ${{ github.ref }}
