@@ -68,8 +68,7 @@ jobs:
         /bin/cp /private/tmp/autopkg_metadata.json "$GITHUB_WORKSPACE"/autopkg_src/autopkg_metadata.json
         /usr/bin/git checkout -b autopkg-metadata
         /usr/bin/git add "$GITHUB_WORKSPACE"/autopkg_src/autopkg_metadata.json
-        /usr/bin/git commit -m "Update autopkg_metadata.json"
-        /usr/bin/git push --set-upstream origin autopkg-metadata
+        if [ -n "$(git status --porcelain)" ]; then git commit -m "feat: Update autopkg_metadata.json `date +'%Y-%m-%d'`" && git push --all; else echo "Nothing to commit"; fi
       env:
         GITHUB_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
 
