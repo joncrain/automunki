@@ -221,6 +221,8 @@ class Recipe(object):
             "run",
             self.path,
             "-vvvvv",
+            "--pre",
+            "io.kandji.stopifdownloadunchanged/StopIfDownloadUnchanged",
             "--post",
             "io.github.hjuutilainen.VirusTotalAnalyzer/VirusTotalAnalyzer",
             "--post",
