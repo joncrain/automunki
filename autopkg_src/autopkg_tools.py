@@ -4,7 +4,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # Copyright (c) tig <https://6fx.eu/>.
 # Copyright (c) Gusto, Inc.
-# Copyright 2023 Kandji, Inc.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 #
@@ -25,7 +24,6 @@ import subprocess
 import sys
 from argparse import ArgumentParser
 from datetime import datetime
-from fnmatch import fnmatch
 from pathlib import Path
 
 import git
@@ -51,7 +49,6 @@ logging.getLogger("").addHandler(console)
 
 from git_utils import create_pull_request, worktree_commit
 from slack_utils import slack_alert, slack_recipe_block, slack_summary_block
-from cache_utils import load_cached_attributes, create_file_and_attributes
 
 
 class Recipe(object):
@@ -93,7 +90,7 @@ class Recipe(object):
 
     def verify_trust_info(self):
         cmd = ["/usr/local/bin/autopkg", "verify-trust-info", self.path, "-vvv"]
-        _, err, exit_code = run_cmd(cmd)
+        output, err, exit_code = run_cmd(cmd)
         if exit_code == 0:
             logging.info(f"Verified trust info for {self.name}")
             self.verified = True
@@ -106,110 +103,21 @@ class Recipe(object):
     def update_trust_info(self):
         logging.info(f"Updating trust info for {self.name}")
         cmd = ["/usr/local/bin/autopkg", "update-trust-info", self.path]
-        output, _, _ = run_cmd(cmd)
+        output, err, exit_code = run_cmd(cmd)
         logging.debug(f"Output: {output}")
         return
 
-    def _get_pkg_version_from_receipt(self, new_dl):
-        """Some processors don't return summary results with version/pkg_path
-        This func will attempt to locate a receipt newer than the located DL
-        and extract both version and pkg_path details for Slack notification"""
-        # Set receipt pkg + version to None to return if we can't derive our version below
-        receipt_pkg = None
-        receipt_version = None
-        # Get modification time of new DMG download
-        dl_mod_time = os.path.getmtime(new_dl)
-        # Get cache dir for build
-        parent_path = Path(new_dl).parents[1]
-
-        logging.debug(f"Trying to get receipt data from provided DL {new_dl}")
-
-        # Check if receipts dir exists
-        if os.path.exists(os.path.join(parent_path, "receipts")):
-            for receipt in os.scandir(os.path.join(parent_path, "receipts")):
-                # If we find a receipt with a newer mod time than our download, likely the receipt for our new build
-                if os.path.getmtime(receipt) > dl_mod_time:
-                    logging.debug(f"Found new receipt at {receipt}")
-                    receipt_plist = _plist_pal(receipt)
-                    logging.debug(f"Read in plist with contents {receipt_plist}")
-                    try:
-                        # Get "version" value from receipts plist and assign
-                        receipt_version = [
-                            values.get("version")
-                            for plist in receipt_plist
-                            for values in plist.values()
-                            if isinstance(values, dict) and "version" in values.keys()
-                        ][-1]
-                        logging.debug(f"Found {receipt_version}")
-                    except IndexError:
-                        continue
-                    try:
-                        # Get "pkg_path" value from receipts plist and assign
-                        receipt_pkg = [
-                            values.get("pkg_path")
-                            for plist in receipt_plist
-                            for values in plist.values()
-                            if isinstance(values, dict) and "pkg_path" in values.keys()
-                        ][-1]
-                    except IndexError:
-                        continue
-        return receipt_pkg, receipt_version
-
     def _parse_report(self, report):
-        report_data = _plist_pal(report)
+        with open(report, "rb") as f:
+            report_data = plistlib.load(f)
         failed_items = report_data.get("failures", [])
-        downloaded_items = []
-        built_items = []
-        # If True, this means something happened
-        if report_data.get("summary_results"):
-            # Wildcard search for "pkg" in results to get key name since there are multiple possibilities
-            pkg_summary_key = "".join(
-                [
-                    x
-                    for x in report_data["summary_results"].keys()
-                    if fnmatch(x, "*pkg*")
-                ]
+        imported_items = []
+        if report_data["summary_results"]:
+            munki_results = report_data["summary_results"].get(
+                "munki_importer_summary_result", {}
             )
-            pkg_results = report_data.get("summary_results").get(pkg_summary_key, {})
-            built_items.extend(pkg_results.get("data_rows", []))
-            dl_results = report_data.get("summary_results").get(
-                "url_downloader_summary_result", {}
-            )
-            downloaded_items.extend(dl_results.get("data_rows", []))
-            # There are some cases where a new package was built, but processors like FlatPkgPacker don't show in results
-            if dl_results and not pkg_results:
-                # If so, look at the download path and identify if the DL'd file was a pkg and report it like a build
-                if fringe_build := "".join(
-                    [
-                        next(iter(x.values()))
-                        for x in dl_results.get("data_rows")
-                        if fnmatch(next(iter(x.values())), "*pkg*")
-                    ]
-                ):
-                    receipt_pkg, receipt_version = self._get_pkg_version_from_receipt(
-                        fringe_build
-                    )
-
-                    # Append pkg_path and version if values are not None
-                    # Elif append download as pkg_path and version if populated
-                    # Else append download as pkg_path and version will be Unknown
-                    if receipt_pkg and receipt_version:
-                        built_items.append(
-                            {"pkg_path": receipt_pkg, "version": receipt_version}
-                        )
-                    elif receipt_version:
-                        logging.debug("Appending built items with version")
-                        built_items.append(
-                            {"pkg_path": fringe_build, "version": receipt_version}
-                        )
-                    else:
-                        built_items.append({"pkg_path": fringe_build})
-
-        return {
-            "built": built_items,
-            "downloaded": downloaded_items,
-            "failed": failed_items,
-        }
+            imported_items.extend(munki_results.get("data_rows", []))
+        return {"imported": imported_items, "failed": failed_items}
 
     def run(self):
         logging.info(f"Running {self.name}")
@@ -221,16 +129,12 @@ class Recipe(object):
             "run",
             self.path,
             "-vvvvv",
-            # "--pre",
-            # "io.kandji.stopifdownloadunchanged/StopIfDownloadUnchanged",
             "--post",
             "io.github.hjuutilainen.VirusTotalAnalyzer/VirusTotalAnalyzer",
-            # "--post",
-            # "io.kandji.cachedata/CacheRecipeMetadata",
             "--report-plist",
             report_path,
         ]
-        output, err, _ = run_cmd(cmd)
+        output, err, exit_code = run_cmd(cmd)
         logging.debug(f"Output: {output.decode()}")
         if err:
             logging.info(f"Error running {self.name}: {err.decode()}")
@@ -260,7 +164,6 @@ def handle_recipe(recipe):
     if recipe.verified:
         recipe.run()
         if recipe.results["imported"]:
-            logging.info(f"Imported {recipe.name} {recipe.updated_version}")
             file_changes = []
             for item in recipe.results["imported"]:
                 pkg_info_path = os.path.join("pkgsinfo", item["pkginfo_path"])
@@ -287,7 +190,7 @@ def handle_recipe(recipe):
         )
         title = f"feat: Update trust for { recipe.name }"
         body = recipe.results["message"]
-        # create_pull_request(munki_repo, title, body, branch_name)
+        create_pull_request(munki_repo, title, body, branch_name)
     slack_payload = slack_recipe_block(recipe, MUNKI_WEBSITE)
     if slack_payload:
         slack_alert(slack_payload, SLACK_WEBHOOK)
@@ -312,26 +215,10 @@ def parse_recipes(recipes, action_recipe=None):
     return map(Recipe, r_list)
 
 
-def _plist_pal(path):
-    """Function accepts argument of path to .plist file as `path`
-    Returns plist formatted as dict"""
-    with open(path, "rb") as f:
-        loaded_plist = plistlib.load(f)
-        return loaded_plist
-
-
 def main():
     parser = ArgumentParser(description="Wrap AutoPkg with git support.")
     parser.add_argument(
         "-l", "--list", help="Path to a plist or JSON list of recipe names."
-    )
-    parser.add_argument(
-        "-c",
-        "--cache",
-        action="store_true",
-        required=False,
-        default=False,
-        help="Load and write previously cached metadata/xattrs for comparison; save out new metadata post-run.",
     )
     args = parser.parse_args()
 
@@ -342,11 +229,8 @@ def main():
     )
 
     if recipes is None:
-        logging.fatal("Recipe --list or RECIPE not provided!")
+        logging.error("Recipe --list or RECIPE not provided!")
         sys.exit(1)
-    if args.cache:
-        attributes_dict = load_cached_attributes("/private/tmp/autopkg_metadata.json")
-        create_file_and_attributes(attributes_dict)
 
     recipes = parse_recipes(recipes, action_recipe)
     results = {}
