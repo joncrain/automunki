@@ -221,12 +221,12 @@ class Recipe(object):
             "run",
             self.path,
             "-vvvvv",
-            "--pre",
-            "io.kandji.stopifdownloadunchanged/StopIfDownloadUnchanged",
+            # "--pre",
+            # "io.kandji.stopifdownloadunchanged/StopIfDownloadUnchanged",
             "--post",
             "io.github.hjuutilainen.VirusTotalAnalyzer/VirusTotalAnalyzer",
-            "--post",
-            "io.kandji.cachedata/CacheRecipeMetadata",
+            # "--post",
+            # "io.kandji.cachedata/CacheRecipeMetadata",
             "--report-plist",
             report_path,
         ]
@@ -261,13 +261,15 @@ def handle_recipe(recipe):
         recipe.run()
         if recipe.results["imported"]:
             logging.info(f"Imported {recipe.name} {recipe.updated_version}")
-            pkg_info_path = os.path.join(
-                "pkgsinfo", recipe.results["imported"][0]["pkginfo_path"]
-            )
+            file_changes = []
+            for item in recipe.results["imported"]:
+                pkg_info_path = os.path.join("pkgsinfo", item["pkginfo_path"])
+                logging.info(f"Adding {pkg_info_path} to commit")
+                file_changes.append(pkg_info_path)
             worktree_commit(
                 munki_repo,
                 recipe.branch,
-                [pkg_info_path],
+                file_changes,
                 f"'Updated { recipe.name } to { recipe.updated_version }'",
             )
 

@@ -56,7 +56,7 @@ jobs:
     - name: Run AutoPkg
       run: |
         pip3 install -r ./autopkg_src/requirements.txt
-        python3 ./autopkg_src/autopkg_tools.py -l ./autopkg_src/recipe_list.json -c
+        python3 ./autopkg_src/autopkg_tools.py -l ./autopkg_src/recipe_list.json
       env:
         RECIPE: ${{ github.event.inputs.recipe }}
         SUMMARY_WEBHOOK_TOKEN: ${{ secrets.SUMMARY_WEBHOOK_TOKEN }}
