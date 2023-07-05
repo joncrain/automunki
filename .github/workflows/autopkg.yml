@@ -1,6 +1,8 @@
 name: AutoPkg run
 
 on:
+  schedule:
+    - cron: '0 4 * * 2,4,6' # At 04:00 on Tuesday, Thursday, and Saturday.
   workflow_dispatch: # manually triggered
     inputs:
       recipe:
