@@ -55,9 +55,14 @@ jobs:
     - name: Run makecatalogs
       run: /usr/local/munki/makecatalogs ./ -s
 
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip' # caching pip dependencies
+    - run: pip install -r ./autopkg_src/requirements.txt
+
     - name: Run AutoPkg
       run: |
-        pip3 install -r ./autopkg_src/requirements.txt
         python3 ./autopkg_src/autopkg_tools.py -l ./autopkg_src/recipe_list.json
       env:
         RECIPE: ${{ github.event.inputs.recipe }}
