@@ -70,15 +70,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
         MUNKI_WEBSITE: ${{ secrets.MUNKI_WEBSITE }}
 
-    - name: Commit autopkg_metadata
-      run: |
-        /bin/cp /private/tmp/autopkg_metadata.json "$GITHUB_WORKSPACE"/autopkg_src/autopkg_metadata.json
-        /usr/bin/git checkout -b autopkg-metadata
-        /usr/bin/git add "$GITHUB_WORKSPACE"/autopkg_src/autopkg_metadata.json
-        if [ -n "$(git status --porcelain)" ]; then git commit -m "feat: Update autopkg_metadata.json `date +'%Y-%m-%d'`" && git push --all; else echo "Nothing to commit"; fi
-      env:
-        GITHUB_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
-
     # - name: Configure AWS credentials
     #   if: always()
     #   uses: aws-actions/configure-aws-credentials@v2
