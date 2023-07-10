@@ -17,6 +17,7 @@ jobs:
       MUNKI_VERSION: 6.3.1
       MUNKI_EXPLICIT_VERSION: 6.3.1.4580
       AUTOPKG_VERSION: 2.7.2
+      PYTHON_VERSION: 3.11
     steps:
     - name: Checkout this repo
       uses: actions/checkout@v3
@@ -55,11 +56,18 @@ jobs:
     - name: Run makecatalogs
       run: /usr/local/munki/makecatalogs ./ -s
 
-    - uses: actions/setup-python@v4
+    - name: Cache Python ${{ env.PYTHON_VERSION }}
+      uses: actions/cache@v3
+      id: python-cache
       with:
-        python-version: '3.11'
+        path: /opt/hostedtoolcache/Python/${{ env.PYTHON_VERSION }}
+        key: ${{ runner.os }}-python-cache-${{ env.PYTHON_VERSION }}
+
+    - uses: actions/setup-python@v4
+      if: steps.python-cache.outputs.cache-hit != 'true'
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
         cache: 'pip' # caching pip dependencies
-        cache-dependency-path: '**/requirements.txt'
     - run: pip install -r ./autopkg_src/requirements.txt
 
     - name: Run AutoPkg
