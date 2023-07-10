@@ -60,7 +60,7 @@ jobs:
       uses: actions/cache@v3
       id: python-cache
       with:
-        path: /opt/hostedtoolcache/Python/${{ env.PYTHON_VERSION }}
+        path: /Users/runner/hostedtoolcache/Python/${{ env.PYTHON_VERSION }}
         key: ${{ runner.os }}-python-cache-${{ env.PYTHON_VERSION }}
 
     - uses: actions/setup-python@v4
