@@ -56,19 +56,21 @@ jobs:
     - name: Run makecatalogs
       run: /usr/local/munki/makecatalogs ./ -s
 
-    - name: Cache Python ${{ env.PYTHON_VERSION }}
-      uses: actions/cache@v3
+    - uses: actions/cache@v2
       id: python-cache
       with:
-        path: /Users/runner/hostedtoolcache/Python/${{ env.PYTHON_VERSION }}
-        key: ${{ runner.os }}-python-cache-${{ env.PYTHON_VERSION }}
+        path: ${{ env.pythonLocation }}
+        key: ${{ env.pythonLocation }}-${{ hashFiles('./autopkg_src/requirements.txt') }}
 
     - uses: actions/setup-python@v4
       if: steps.python-cache.outputs.cache-hit != 'true'
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         cache: 'pip' # caching pip dependencies
-    - run: pip install -r ./autopkg_src/requirements.txt
+
+    - name: pip Install 
+      if: steps.python-cache.outputs.cache-hit != 'true'
+      run: pip install -r ./autopkg_src/requirements.txt
 
     - name: Run AutoPkg
       run: |
