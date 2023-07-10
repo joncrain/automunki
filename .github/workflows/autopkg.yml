@@ -59,12 +59,11 @@ jobs:
       with:
         python-version: '3.11'
         cache: 'pip' # caching pip dependencies
+        cache-dependency-path: '**/requirements.txt'
     - run: pip install -r ./autopkg_src/requirements.txt
 
     - name: Run AutoPkg
       run: |
-        which python
-        which python3
         python3 ./autopkg_src/autopkg_tools.py -l ./autopkg_src/recipe_list.json
       env:
         RECIPE: ${{ github.event.inputs.recipe }}
