@@ -17,7 +17,7 @@ jobs:
       MUNKI_VERSION: 6.3.1
       MUNKI_EXPLICIT_VERSION: 6.3.1.4580
       AUTOPKG_VERSION: 2.7.2
-      PYTHON_VERSION: 3.11
+      PYTHON_VERSION: 3.11.4
     steps:
     - name: Checkout this repo
       uses: actions/checkout@v3
