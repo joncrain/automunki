@@ -68,7 +68,6 @@ jobs:
         key: ${{ env.pythonLocation }}-${{ hashFiles('./autopkg_src/requirements.txt') }}
 
     - name: pip Install 
-      if: steps.python-cache.outputs.cache-hit != 'true'
       run: pip install -r ./autopkg_src/requirements.txt
 
     - name: Run AutoPkg
