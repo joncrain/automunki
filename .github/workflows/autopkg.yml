@@ -77,7 +77,7 @@ jobs:
         RECIPE: ${{ github.event.inputs.recipe }}
         SUMMARY_WEBHOOK_TOKEN: ${{ secrets.SUMMARY_WEBHOOK_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
-        MUNKI_WEBSITE: ${{ secrets.MUNKI_WEBSITE }}
+        MUNKI_WEBSITE: ${{ var.MUNKI_WEBSITE }}
 
     # - name: Configure AWS credentials
     #   if: always()
