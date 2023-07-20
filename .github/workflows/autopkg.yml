@@ -2,7 +2,7 @@ name: AutoPkg run
 
 on:
   schedule:
-    - cron: '0 4 * * 2,4,6' # At 04:00 on Tuesday, Thursday, and Saturday.
+    - cron: '23 4 * * 2,4,6' # At 04:00 on Tuesday, Thursday, and Saturday.
   workflow_dispatch: # manually triggered
     inputs:
       recipe:
@@ -47,7 +47,6 @@ jobs:
         /usr/bin/git config --global user.email "runner@githubactions.local"
         /bin/mkdir -p /Users/runner/Library/AutoPkg/
         /bin/ln -s "$GITHUB_WORKSPACE"/autopkg_src/Recipes /Users/runner/Library/AutoPkg/
-        /bin/cp "$GITHUB_WORKSPACE"/autopkg_src/autopkg_metadata.json /private/tmp/autopkg_metadata.json
 
     - name: Configure AutoPkg Repos
       run: |
@@ -67,7 +66,7 @@ jobs:
         path: ${{ env.pythonLocation }}
         key: ${{ env.pythonLocation }}-${{ hashFiles('./autopkg_src/requirements.txt') }}
 
-    - name: pip Install 
+    - name: pip Install
       run: pip install -r ./autopkg_src/requirements.txt
 
     - name: Run AutoPkg
