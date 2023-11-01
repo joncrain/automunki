@@ -8,6 +8,9 @@ on:
 
 jobs:
   merge-branch:
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout MunkiRepo (this repo)
@@ -19,7 +22,7 @@ jobs:
       - name: Merge the AutoPkg Branch
         uses: everlytic/branch-merge@c4a244dc23143f824ae6c022a10732566cb8e973 # v1.1.5
         with:
-          github_token: ${{ secrets.RW_REPO_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           source_ref: ${{ github.ref }}
           target_branch: "main"
           commit_message_template: "feat: Merged ${{ env.BRANCH_NAME }}"
