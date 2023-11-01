@@ -27,3 +27,5 @@ Be sure the that `repo_list.txt` file is updated with the repo you want to run t
 ### Storing binaries
 
 This wrapper does not store the binaries in the repo. Instead it is up to the user to add a final step to the `autopkg.yml` file to sync to a storage bucket (i.e. S3, Azure Blob, etc.)
+
+Test automerge.
