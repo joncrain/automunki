@@ -20,7 +20,7 @@ jobs:
         uses: benjefferies/branch-protection-bot@ab95ff5efbc98a970305f21549646164fc7c0556
         if: always()
         with:
-          access-token: ${{ secrets.GITHUB_TOKEN }}
+          access_token: ${{ secrets.GITHUB_TOKEN }}
           branch: main
           enforce_admins: false
       - name: Get Branch Name
@@ -41,6 +41,6 @@ jobs:
         uses: benjefferies/branch-protection-bot@ab95ff5efbc98a970305f21549646164fc7c0556
         if: always() # Force to always run this step to ensure "include administrators" is always turned back on
         with:
-          access-token: ${{ secrets.GITHUB_TOKEN }}
+          access_token: ${{ secrets.GITHUB_TOKEN }}
           branch: main
           enforce_admins: true
