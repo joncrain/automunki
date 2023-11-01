@@ -16,7 +16,13 @@ jobs:
     steps:
       - name: Checkout MunkiRepo (this repo)
         uses: actions/checkout@v3
-
+      - name: Temporarily disable "include administrators" branch protection
+        uses: benjefferies/branch-protection-bot@ab95ff5efbc98a970305f21549646164fc7c0556
+        if: always()
+        with:
+          access-token: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+          enforce_admins: false
       - name: Get Branch Name
         run: echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
 
@@ -31,3 +37,10 @@ jobs:
       - name: Delete Branch
         run: |
           git push origin --delete ${{ github.ref }}
+      - name: Enable "include administrators" branch protection
+        uses: benjefferies/branch-protection-bot@ab95ff5efbc98a970305f21549646164fc7c0556
+        if: always() # Force to always run this step to ensure "include administrators" is always turned back on
+        with:
+          access-token: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+          enforce_admins: true
