@@ -8,10 +8,7 @@ on:
 
 jobs:
   merge-branch:
-    permissions:
-      
-      contents: write
-      pull-requests: write
+    permissions: write-all
     runs-on: ubuntu-latest
     steps:
       - name: Checkout MunkiRepo (this repo)
