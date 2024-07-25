@@ -19,10 +19,16 @@ jobs:
       AUTOPKG_VERSION: 2.7.2
       PYTHON_VERSION: 3.11.4
     steps:
+    - id: create_token
+      uses: tibdex/github-app-token@v2
+      with:
+        app_id: ${{ secrets.APP_ID }}
+        private_key: ${{ secrets.PRIVATE_KEY }}
+    
     - name: Checkout this repo
       uses: actions/checkout@v3
       with:
-        token: ${{ secrets.RW_REPO_TOKEN }}
+        token: ${{ steps.create_token.outputs.token }}
 
     - name: Install Munki
       uses: joncrain/macos-pkg-install@v1.0
@@ -40,7 +46,7 @@ jobs:
         /usr/bin/defaults write com.github.autopkg RECIPE_REPO_DIR "$GITHUB_WORKSPACE"/autopkg_src/repos/
         /usr/bin/defaults write com.github.autopkg FAIL_RECIPES_WITHOUT_TRUST_INFO -bool YES
         /usr/bin/defaults write com.github.autopkg MUNKI_REPO "$GITHUB_WORKSPACE"
-        /usr/bin/defaults write com.github.autopkg GITHUB_TOKEN "${{ secrets.RW_REPO_TOKEN }}"
+        /usr/bin/defaults write com.github.autopkg GITHUB_TOKEN "${{ steps.create_token.outputs.token }}"
         /bin/mkdir ./pkgs/
         /bin/mkdir -p /var/tmp/autopkg/
         /usr/bin/git config --global user.name "runner"
@@ -75,7 +81,7 @@ jobs:
       env:
         RECIPE: ${{ github.event.inputs.recipe }}
         SUMMARY_WEBHOOK_TOKEN: ${{ secrets.SUMMARY_WEBHOOK_TOKEN }}
-        GITHUB_TOKEN: ${{ secrets.RW_REPO_TOKEN }}
+        GITHUB_TOKEN: ${{ steps.create_token.outputs.token }}
         MUNKI_WEBSITE: ${{ vars.MUNKI_WEBSITE }}
 
     # - name: Configure AWS credentials
