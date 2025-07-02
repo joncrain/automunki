@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout MunkiRepo (this repo)
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Temporarily disable "include administrators" branch protection
         uses: benjefferies/branch-protection-bot@ab95ff5efbc98a970305f21549646164fc7c0556
         if: always()
