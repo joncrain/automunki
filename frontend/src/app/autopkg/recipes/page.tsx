@@ -103,7 +103,7 @@ function makeColumns(
 						<Badge key={c} variant="secondary">
 							{c}
 						</Badge>
-					)) ?? "\u2014"}
+					)) ?? "—"}
 				</div>
 			),
 		},
@@ -122,7 +122,7 @@ function makeColumns(
 						{row.original.last_run_status}
 					</Badge>
 				) : (
-					"\u2014"
+					"—"
 				),
 		},
 		{
@@ -214,7 +214,7 @@ export default function RecipesPage() {
 				<div className="relative flex-1 max-w-sm">
 					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
-						placeholder="Search recipes\u2026"
+						placeholder="Search recipes..."
 						value={search}
 						onChange={(e) => setSearch(e.target.value || null)}
 						className="pl-9"
@@ -753,7 +753,7 @@ function RecipeEditDialog({
 						onClick={handleSave}
 						disabled={saveMutation.isPending || !name || !identifier}
 					>
-						{saveMutation.isPending ? "Saving\u2026" : "Save Changes"}
+						{saveMutation.isPending ? "Saving..." : "Save Changes"}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

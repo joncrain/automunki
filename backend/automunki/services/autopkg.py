@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 import structlog
 from httpx import AsyncClient
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from automunki.core.config import settings
+from automunki.models.autopkg import GitHubRecipe, GitHubRecipeRepo
 
 logger = structlog.get_logger()
 
@@ -223,3 +227,107 @@ async def search_github_recipes(query: str = "munki recipe") -> list[dict]:
                 )
 
     return results
+
+
+# ── Local cache sync ─────────────────────────────────────────────────────
+
+
+async def sync_repos_to_cache(session: AsyncSession) -> dict:
+    """
+    Fetch all autopkg recipe repos from GitHub and upsert into local cache.
+    Returns stats about what was synced.
+    """
+    remote_repos = await discover_autopkg_repos()
+    if not remote_repos:
+        return {"error": "No repos fetched from GitHub (rate limited?)"}
+
+    remote_by_name = {r["full_name"]: r for r in remote_repos}
+
+    existing = await session.execute(select(GitHubRecipeRepo))
+    existing_by_name = {r.full_name: r for r in existing.scalars().all()}
+
+    added = 0
+    updated = 0
+    removed = 0
+
+    for full_name, data in remote_by_name.items():
+        if full_name in existing_by_name:
+            repo = existing_by_name[full_name]
+            repo.description = data.get("description")
+            repo.stars = data.get("stars", 0)
+            repo.html_url = data["html_url"]
+            repo.clone_url = data.get("url")
+            repo.updated_at = data.get("updated_at")
+            updated += 1
+        else:
+            repo = GitHubRecipeRepo(
+                full_name=full_name,
+                name=data["name"],
+                html_url=data["html_url"],
+                clone_url=data.get("url"),
+                description=data.get("description"),
+                stars=data.get("stars", 0),
+                updated_at=data.get("updated_at"),
+            )
+            session.add(repo)
+            added += 1
+
+    stale = set(existing_by_name.keys()) - set(remote_by_name.keys())
+    for full_name in stale:
+        await session.delete(existing_by_name[full_name])
+        removed += 1
+
+    await session.commit()
+    logger.info("repos_synced", added=added, updated=updated, removed=removed)
+    return {
+        "added": added,
+        "updated": updated,
+        "removed": removed,
+        "total": len(remote_repos),
+    }
+
+
+async def sync_repo_recipes_to_cache(
+    session: AsyncSession, repo: GitHubRecipeRepo
+) -> int:
+    """
+    Fetch all .munki.recipe files from a single GitHub repo and cache them locally.
+    Returns the number of recipes cached.
+    """
+    remote_recipes = await discover_recipes_in_repo(repo.full_name)
+
+    await session.execute(delete(GitHubRecipe).where(GitHubRecipe.repo_id == repo.id))
+
+    for r in remote_recipes:
+        session.add(
+            GitHubRecipe(
+                repo_id=repo.id,
+                name=r["name"],
+                filename=r["filename"],
+                path=r["path"],
+                identifier_guess=r["identifier_guess"],
+                url=r["url"],
+            )
+        )
+
+    repo.synced_at = datetime.now(timezone.utc)
+    await session.commit()
+    logger.info("repo_recipes_synced", repo=repo.full_name, count=len(remote_recipes))
+    return len(remote_recipes)
+
+
+async def sync_all_recipes_to_cache(session: AsyncSession) -> dict:
+    """Sync recipes for all cached repos. Can be slow for many repos."""
+    repos = (await session.execute(select(GitHubRecipeRepo))).scalars().all()
+    total = 0
+    synced_repos = 0
+    errors = 0
+    for repo in repos:
+        try:
+            count = await sync_repo_recipes_to_cache(session, repo)
+            total += count
+            synced_repos += 1
+        except Exception:
+            logger.exception("sync_repo_recipes_error", repo=repo.full_name)
+            errors += 1
+    return {"repos_synced": synced_repos, "total_recipes": total, "errors": errors}

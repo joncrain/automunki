@@ -7,6 +7,7 @@ import {
 	ExternalLink,
 	Loader2,
 	Plus,
+	RefreshCw,
 	Search,
 	Star,
 	X,
@@ -35,8 +36,8 @@ import { Input } from "@/components/ui/input";
 import {
 	type AutoPkgRecipeRead,
 	api,
+	type CachedGitHubRepo,
 	type DiscoveredRecipe,
-	type DiscoveredRepo,
 	type SearchedRecipe,
 } from "@/lib/api";
 
@@ -45,17 +46,16 @@ export default function DiscoverRecipesPage() {
 		"search",
 		parseAsString.withDefault(""),
 	);
-	const [selectedRepo, setSelectedRepo] = useState<DiscoveredRepo | null>(null);
+	const [selectedRepo, setSelectedRepo] = useState<CachedGitHubRepo | null>(
+		null,
+	);
 	const queryClient = useQueryClient();
 	const trimmed = search.trim();
 	const isSearching = trimmed.length >= 2;
 
-	const { data: repoData, isLoading: reposLoading } = useQuery({
+	const { data: repos, isLoading: reposLoading } = useQuery({
 		queryKey: ["discover-repos"],
-		queryFn: () =>
-			api.get<{ repos: DiscoveredRepo[]; total: number }>(
-				"/autopkg/recipes/discover",
-			),
+		queryFn: () => api.get<CachedGitHubRepo[]>("/autopkg/recipes/discover"),
 	});
 
 	const { data: searchData, isFetching: searchFetching } = useQuery({
@@ -76,8 +76,32 @@ export default function DiscoverRecipesPage() {
 		(existingRecipes ?? []).map((r) => r.identifier),
 	);
 
+	const syncReposMutation = useMutation({
+		mutationFn: () =>
+			api.post<Record<string, number>>("/autopkg/cache/sync-repos"),
+		onSuccess: (data) => {
+			toast.success(
+				`Synced repos: ${data.added} added, ${data.updated} updated, ${data.total} total`,
+			);
+			queryClient.invalidateQueries({ queryKey: ["discover-repos"] });
+		},
+		onError: (err: Error) => toast.error(`Sync failed: ${err.message}`),
+	});
+
+	const syncRecipesMutation = useMutation({
+		mutationFn: () =>
+			api.post<Record<string, number>>("/autopkg/cache/sync-recipes"),
+		onSuccess: (data) => {
+			toast.success(
+				`Synced recipes for ${data.repos_synced} repos (${data.total_recipes} recipes)`,
+			);
+			queryClient.invalidateQueries({ queryKey: ["discover-repos"] });
+		},
+		onError: (err: Error) => toast.error(`Sync failed: ${err.message}`),
+	});
+
 	const addMutation = useMutation({
-		mutationFn: (recipe: SearchedRecipe) =>
+		mutationFn: (recipe: SearchedRecipe | DiscoveredRecipe) =>
 			api.post<AutoPkgRecipeRead>("/autopkg/recipes/add-override", {
 				identifier: recipe.identifier_guess,
 				name: recipe.name,
@@ -103,7 +127,8 @@ export default function DiscoverRecipesPage() {
 		searchByRepo.set(r.repo_full_name, list);
 	}
 
-	const allRepos = repoData?.repos ?? [];
+	const allRepos = repos ?? [];
+	const isEmpty = allRepos.length === 0 && !reposLoading;
 
 	const sorted = isSearching
 		? [...allRepos].sort((a, b) => {
@@ -114,13 +139,16 @@ export default function DiscoverRecipesPage() {
 			})
 		: allRepos;
 
+	const isSyncing =
+		syncReposMutation.isPending || syncRecipesMutation.isPending;
+
 	return (
 		<div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
 			<div>
 				<h1 className="text-3xl font-bold">Discover Recipes</h1>
 				<p className="mt-1 text-muted-foreground">
-					Browse AutoPkg recipe repos or search for specific recipes. Click a
-					repo to see all its recipes.
+					Browse cached AutoPkg recipe repos or search for specific recipes.
+					Click a repo to see all its recipes.
 				</p>
 			</div>
 
@@ -128,7 +156,7 @@ export default function DiscoverRecipesPage() {
 				<div className="relative flex-1 max-w-md">
 					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
-						placeholder="Search for recipes (e.g. Firefox, Unity, Chrome)\u2026"
+						placeholder="Search for recipes (e.g. Firefox, Unity, Chrome)..."
 						value={search}
 						onChange={(e) => setSearch(e.target.value || null)}
 						className="pl-9"
@@ -156,17 +184,61 @@ export default function DiscoverRecipesPage() {
 						{searchByRepo.size !== 1 ? "s" : ""}
 					</span>
 				)}
-				{!isSearching && repoData && !reposLoading && (
+				{!isSearching && allRepos.length > 0 && !reposLoading && (
 					<span className="text-sm text-muted-foreground">
-						{repoData.total} recipe repos
+						{allRepos.length} repos cached
 					</span>
 				)}
+
+				<div className="ml-auto flex items-center gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={isSyncing}
+						onClick={() => syncReposMutation.mutate()}
+					>
+						<RefreshCw
+							className={`mr-1 h-4 w-4 ${syncReposMutation.isPending ? "animate-spin" : ""}`}
+						/>
+						Sync Repos
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={isSyncing || allRepos.length === 0}
+						onClick={() => syncRecipesMutation.mutate()}
+					>
+						<RefreshCw
+							className={`mr-1 h-4 w-4 ${syncRecipesMutation.isPending ? "animate-spin" : ""}`}
+						/>
+						Sync All Recipes
+					</Button>
+				</div>
 			</div>
 
 			{reposLoading ? (
 				<div className="flex items-center justify-center py-12 text-muted-foreground">
 					<Loader2 className="mr-2 h-5 w-5 animate-spin" />
-					Fetching repos from GitHub\u2026
+					Loading cached repos...
+				</div>
+			) : isEmpty ? (
+				<div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-4">
+					<BookOpen className="h-12 w-12" />
+					<p className="text-lg">No repos cached yet.</p>
+					<p className="text-sm">
+						Click &quot;Sync Repos&quot; to fetch the list of AutoPkg recipe
+						repos from GitHub, then &quot;Sync All Recipes&quot; to index their
+						recipes.
+					</p>
+					<Button
+						onClick={() => syncReposMutation.mutate()}
+						disabled={syncReposMutation.isPending}
+					>
+						<RefreshCw
+							className={`mr-2 h-4 w-4 ${syncReposMutation.isPending ? "animate-spin" : ""}`}
+						/>
+						Sync Repos from GitHub
+					</Button>
 				</div>
 			) : (
 				<div className="flex-1 min-h-0 overflow-y-auto">
@@ -175,6 +247,7 @@ export default function DiscoverRecipesPage() {
 							const recipes = searchByRepo.get(repo.full_name);
 							const hasRecipeResults =
 								isSearching && recipes && recipes.length > 0;
+							const cachedCount = repo.cached_recipes?.length ?? 0;
 
 							return (
 								<Card
@@ -201,6 +274,14 @@ export default function DiscoverRecipesPage() {
 													<Badge variant="default" className="text-xs">
 														{recipes.length} match
 														{recipes.length !== 1 ? "es" : ""}
+													</Badge>
+												)}
+												{cachedCount > 0 && !hasRecipeResults && (
+													<Badge
+														variant="secondary"
+														className="text-xs tabular-nums"
+													>
+														{cachedCount}
 													</Badge>
 												)}
 												{repo.stars > 0 && (
@@ -320,12 +401,15 @@ function RepoRecipesDialog({
 	onClose,
 	onAdded,
 }: {
-	repo: DiscoveredRepo;
+	repo: CachedGitHubRepo;
 	existingIdentifiers: Set<string>;
 	onClose: () => void;
 	onAdded: () => void;
 }) {
 	const [recipeSearch, setRecipeSearch] = useState("");
+	const queryClient = useQueryClient();
+
+	const hasCachedRecipes = (repo.cached_recipes?.length ?? 0) > 0;
 
 	const { data, isLoading } = useQuery({
 		queryKey: ["discover-repo-recipes", repo.full_name],
@@ -333,10 +417,25 @@ function RepoRecipesDialog({
 			api.get<{ recipes: DiscoveredRecipe[]; total: number }>(
 				`/autopkg/recipes/discover/${repo.full_name}`,
 			),
+		enabled: !hasCachedRecipes,
+	});
+
+	const syncMutation = useMutation({
+		mutationFn: () =>
+			api.post<{ recipes_synced: number }>(
+				`/autopkg/cache/sync-repo/${repo.full_name}`,
+			),
+		onSuccess: (data) => {
+			toast.success(`Synced ${data.recipes_synced} recipes for ${repo.name}`);
+			queryClient.invalidateQueries({ queryKey: ["discover-repos"] });
+		},
+		onError: (err: Error) => toast.error(err.message),
 	});
 
 	const addMutation = useMutation({
-		mutationFn: (recipe: DiscoveredRecipe) =>
+		mutationFn: (
+			recipe: DiscoveredRecipe | { name: string; identifier_guess: string },
+		) =>
 			api.post<AutoPkgRecipeRead>("/autopkg/recipes/add-override", {
 				identifier: recipe.identifier_guess,
 				name: recipe.name,
@@ -354,11 +453,30 @@ function RepoRecipesDialog({
 		onError: (err: Error) => toast.error(err.message),
 	});
 
-	const recipes = (data?.recipes ?? []).filter((r) =>
-		recipeSearch
-			? r.name.toLowerCase().includes(recipeSearch.toLowerCase())
-			: true,
-	);
+	const recipesToShow = hasCachedRecipes
+		? repo.cached_recipes
+				.filter((r) =>
+					recipeSearch
+						? r.name.toLowerCase().includes(recipeSearch.toLowerCase())
+						: true,
+				)
+				.map((r) => ({
+					name: r.name,
+					filename: r.filename,
+					path: r.path,
+					identifier_guess: r.identifier_guess,
+					repo_full_name: repo.full_name,
+					url: r.url,
+				}))
+		: (data?.recipes ?? []).filter((r) =>
+				recipeSearch
+					? r.name.toLowerCase().includes(recipeSearch.toLowerCase())
+					: true,
+			);
+
+	const totalCount = hasCachedRecipes
+		? repo.cached_recipes.length
+		: (data?.total ?? 0);
 
 	return (
 		<Dialog open onOpenChange={() => onClose()}>
@@ -369,7 +487,7 @@ function RepoRecipesDialog({
 						{repo.name}
 					</DialogTitle>
 					<DialogDescription>
-						Munki recipes found in this repo. Click + to add an override.
+						Munki recipes in this repo. Click + to add an override.
 						<a
 							href={repo.html_url}
 							target="_blank"
@@ -385,7 +503,7 @@ function RepoRecipesDialog({
 				<div className="relative">
 					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
-						placeholder="Filter recipes\u2026"
+						placeholder="Filter recipes..."
 						value={recipeSearch}
 						onChange={(e) => setRecipeSearch(e.target.value)}
 						className="pl-9"
@@ -393,17 +511,18 @@ function RepoRecipesDialog({
 				</div>
 
 				<div className="max-h-[50vh] space-y-1 overflow-y-auto rounded-md border p-2">
-					{isLoading ? (
+					{!hasCachedRecipes && isLoading ? (
 						<div className="flex items-center justify-center py-8 text-muted-foreground">
 							<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-							Scanning repo\u2026
+							Scanning repo...
 						</div>
-					) : recipes.length === 0 ? (
+					) : recipesToShow.length === 0 ? (
 						<p className="py-8 text-center text-sm text-muted-foreground">
 							No .munki.recipe files found.
+							{!hasCachedRecipes && " Try syncing this repo's recipes."}
 						</p>
 					) : (
-						recipes.map((recipe) => {
+						recipesToShow.map((recipe) => {
 							const alreadyAdded = existingIdentifiers.has(
 								recipe.identifier_guess,
 							);
@@ -450,10 +569,23 @@ function RepoRecipesDialog({
 					)}
 				</div>
 
-				<DialogFooter>
-					<span className="flex-1 text-sm text-muted-foreground">
-						{data ? `${data.total} recipes found` : ""}
-					</span>
+				<DialogFooter className="flex-row items-center justify-between sm:justify-between">
+					<div className="flex items-center gap-2">
+						<span className="text-sm text-muted-foreground">
+							{totalCount > 0 ? `${totalCount} recipes` : ""}
+						</span>
+						<Button
+							variant="ghost"
+							size="sm"
+							disabled={syncMutation.isPending}
+							onClick={() => syncMutation.mutate()}
+						>
+							<RefreshCw
+								className={`mr-1 h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`}
+							/>
+							Sync
+						</Button>
+					</div>
 					<Button variant="outline" onClick={onClose}>
 						Close
 					</Button>

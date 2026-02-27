@@ -145,7 +145,7 @@ export default function AutoPkgRunsPage() {
 			header: "Results",
 			cell: ({ row }) => {
 				const r = row.original;
-				if (!r.total_recipes) return "\u2014";
+				if (!r.total_recipes) return "—";
 				return (
 					<div className="flex gap-2">
 						{r.recipes_imported ? (

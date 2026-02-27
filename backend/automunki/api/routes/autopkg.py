@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,6 +14,8 @@ from automunki.models.autopkg import (
     AutoPkgRepo,
     AutoPkgRun,
     AutoPkgRunResult,
+    GitHubRecipe,
+    GitHubRecipeRepo,
     RecipeResultStatus,
     RunStatus,
     RunTriggerType,
@@ -27,6 +29,7 @@ from automunki.schemas.autopkg import (
     AutoPkgRepoCreate,
     AutoPkgRepoRead,
     AutoPkgRunRead,
+    GitHubRecipeRepoRead,
     RunResultCreate,
     RunResultRead,
     TriggerRunRequest,
@@ -34,10 +37,11 @@ from automunki.schemas.autopkg import (
 from automunki.schemas.common import PaginatedResponse
 from automunki.services.audit import create_audit_entry
 from automunki.services.autopkg import (
-    discover_autopkg_repos,
     discover_recipes_in_repo,
     dispatch_autopkg_workflow,
-    search_github_recipes,
+    sync_all_recipes_to_cache,
+    sync_repo_recipes_to_cache,
+    sync_repos_to_cache,
 )
 
 router = APIRouter(prefix="/autopkg", tags=["autopkg"])
@@ -285,26 +289,137 @@ async def update_recipe(
     return AutoPkgRecipeRead.model_validate(recipe)
 
 
-@router.get("/recipes/discover")
-async def discover_recipes():
-    """Discover recipe repos from the autopkg GitHub org."""
-    repos = await discover_autopkg_repos()
-    return {"repos": repos, "total": len(repos)}
+@router.get("/recipes/discover", response_model=list[GitHubRecipeRepoRead])
+async def discover_recipes(session: AsyncSession = Depends(get_session)):
+    """List all cached GitHub recipe repos from the local DB."""
+    result = await session.execute(
+        select(GitHubRecipeRepo)
+        .options(selectinload(GitHubRecipeRepo.cached_recipes))
+        .order_by(GitHubRecipeRepo.stars.desc(), GitHubRecipeRepo.name)
+    )
+    repos = result.scalars().unique().all()
+    return [GitHubRecipeRepoRead.model_validate(r) for r in repos]
 
 
 @router.get("/recipes/discover/{repo_owner}/{repo_name}")
-async def discover_repo_recipes(repo_owner: str, repo_name: str):
-    """List all .munki.recipe files in a specific GitHub repo."""
+async def discover_repo_recipes(
+    repo_owner: str,
+    repo_name: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """List cached recipes for a specific repo. If none cached, fetch live."""
     full_name = f"{repo_owner}/{repo_name}"
+    repo = (
+        await session.execute(
+            select(GitHubRecipeRepo)
+            .options(selectinload(GitHubRecipeRepo.cached_recipes))
+            .where(GitHubRecipeRepo.full_name == full_name)
+        )
+    ).scalar_one_or_none()
+
+    if repo and repo.cached_recipes:
+        recipes = [
+            {
+                "name": r.name,
+                "filename": r.filename,
+                "path": r.path,
+                "identifier_guess": r.identifier_guess,
+                "repo_full_name": full_name,
+                "url": r.url,
+            }
+            for r in repo.cached_recipes
+        ]
+        return {
+            "recipes": recipes,
+            "total": len(recipes),
+            "repo": full_name,
+            "cached": True,
+        }
+
     recipes = await discover_recipes_in_repo(full_name)
-    return {"recipes": recipes, "total": len(recipes), "repo": full_name}
+    if repo and recipes:
+        await sync_repo_recipes_to_cache(session, repo)
+    return {
+        "recipes": recipes,
+        "total": len(recipes),
+        "repo": full_name,
+        "cached": False,
+    }
 
 
 @router.get("/recipes/search")
-async def search_recipes(q: str = Query(..., min_length=2)):
-    """Search for .munki.recipe files across the autopkg GitHub org."""
-    results = await search_github_recipes(q)
+async def search_recipes(
+    q: str = Query(..., min_length=2),
+    session: AsyncSession = Depends(get_session),
+):
+    """Search locally cached recipes by name, path, or identifier."""
+    pattern = f"%{q}%"
+    result = await session.execute(
+        select(GitHubRecipe)
+        .where(
+            or_(
+                GitHubRecipe.name.ilike(pattern),
+                GitHubRecipe.path.ilike(pattern),
+                GitHubRecipe.identifier_guess.ilike(pattern),
+            )
+        )
+        .options(selectinload(GitHubRecipe.repo))
+        .limit(200)
+    )
+    recipes = result.scalars().all()
+    results = [
+        {
+            "name": r.name,
+            "filename": r.filename,
+            "path": r.path,
+            "identifier_guess": r.identifier_guess,
+            "repo_full_name": r.repo.full_name if r.repo else "",
+            "repo_name": r.repo.name if r.repo else "",
+            "repo_url": r.repo.html_url if r.repo else "",
+            "url": r.url,
+        }
+        for r in recipes
+    ]
     return {"results": results, "total": len(results)}
+
+
+# ── GitHub cache sync ────────────────────────────────────────────────────
+
+
+@router.post("/cache/sync-repos")
+async def sync_repos(session: AsyncSession = Depends(get_session)):
+    """Sync the list of autopkg recipe repos from GitHub into the local cache."""
+    result = await sync_repos_to_cache(session)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@router.post("/cache/sync-recipes")
+async def sync_recipes(session: AsyncSession = Depends(get_session)):
+    """Sync all recipes for all cached repos. This can take a while."""
+    return await sync_all_recipes_to_cache(session)
+
+
+@router.post("/cache/sync-repo/{repo_owner}/{repo_name}")
+async def sync_single_repo(
+    repo_owner: str,
+    repo_name: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Sync recipes for a single cached repo."""
+    full_name = f"{repo_owner}/{repo_name}"
+    repo = (
+        await session.execute(
+            select(GitHubRecipeRepo).where(GitHubRecipeRepo.full_name == full_name)
+        )
+    ).scalar_one_or_none()
+    if not repo:
+        raise HTTPException(
+            status_code=404, detail="Repo not in cache. Sync repos first."
+        )
+    count = await sync_repo_recipes_to_cache(session, repo)
+    return {"repo": full_name, "recipes_synced": count}
 
 
 @router.post("/recipes/add-override", response_model=AutoPkgRecipeRead)

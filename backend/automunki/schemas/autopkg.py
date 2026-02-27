@@ -133,3 +133,33 @@ class AutoPkgRunRead(BaseModel):
 class ApprovalRequest(BaseModel):
     approved: bool
     comment: str | None = None
+
+
+# ── GitHub recipe cache schemas ──────────────────────────────────────────
+
+
+class GitHubRecipeRepoRead(BaseModel):
+    id: UUID
+    full_name: str
+    name: str
+    html_url: str
+    clone_url: str | None = None
+    description: str | None = None
+    stars: int = 0
+    updated_at: str | None = None
+    synced_at: datetime
+    cached_recipes: list["GitHubRecipeRead"] = []
+
+    model_config = {"from_attributes": True}
+
+
+class GitHubRecipeRead(BaseModel):
+    id: UUID
+    repo_id: UUID
+    name: str
+    filename: str
+    path: str
+    identifier_guess: str
+    url: str
+
+    model_config = {"from_attributes": True}

@@ -64,6 +64,49 @@ class AutoPkgRepo(UUIDMixin, Base):
     )
 
 
+class GitHubRecipeRepo(UUIDMixin, Base):
+    """Locally cached GitHub autopkg recipe repository metadata."""
+
+    __tablename__ = "github_recipe_repo"
+
+    full_name: Mapped[str] = mapped_column(
+        Text, unique=True, nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    html_url: Mapped[str] = mapped_column(Text, nullable=False)
+    clone_url: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    stars: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[str | None] = mapped_column(Text)
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    cached_recipes: Mapped[list["GitHubRecipe"]] = relationship(
+        back_populates="repo", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class GitHubRecipe(UUIDMixin, Base):
+    """Locally cached recipe file from a GitHub autopkg repo."""
+
+    __tablename__ = "github_recipe"
+
+    repo_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("github_recipe_repo.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    filename: Mapped[str] = mapped_column(Text, nullable=False)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    identifier_guess: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+
+    repo: Mapped["GitHubRecipeRepo"] = relationship(back_populates="cached_recipes")
+
+
 class AutoPkgRecipe(UUIDMixin, Base):
     __tablename__ = "autopkg_recipe"
 
