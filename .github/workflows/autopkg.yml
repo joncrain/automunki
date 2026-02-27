@@ -111,7 +111,7 @@ jobs:
         /usr/bin/tar -czvf /var/tmp/autopkg.tar.gz /var/tmp/autopkg/
 
     - name: Upload log file
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v7
       with:
         name: autopkg_log
         path: /var/tmp/autopkg.tar.gz
