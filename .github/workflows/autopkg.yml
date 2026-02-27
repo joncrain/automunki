@@ -8,6 +8,12 @@ on:
       recipe:
         description: Recipe to Run (optional)
         required: false
+      run_id:
+        description: AutoMunki run ID for API reporting
+        required: false
+      api_url:
+        description: AutoMunki API URL
+        required: false
 
 jobs:
   AutoPkg:
@@ -24,7 +30,7 @@ jobs:
       with:
         app_id: ${{ secrets.APP_ID }}
         private_key: ${{ secrets.PRIVATE_KEY }}
-    
+
     - name: Checkout this repo
       uses: actions/checkout@v3
       with:
@@ -83,6 +89,8 @@ jobs:
         SUMMARY_WEBHOOK_TOKEN: ${{ secrets.SUMMARY_WEBHOOK_TOKEN }}
         GITHUB_TOKEN: ${{ steps.create_token.outputs.token }}
         MUNKI_WEBSITE: ${{ vars.MUNKI_WEBSITE }}
+        AUTOMUNKI_API_URL: ${{ vars.AUTOMUNKI_API_URL }}
+        AUTOMUNKI_RUN_ID: ${{ github.event.inputs.run_id }}
 
     # - name: Configure AWS credentials
     #   if: always()
