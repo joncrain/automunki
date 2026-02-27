@@ -1,0 +1,135 @@
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel
+
+
+class AutoPkgRepoBase(BaseModel):
+    url: str
+    name: str
+    description: str | None = None
+    is_active: bool = True
+
+
+class AutoPkgRepoCreate(AutoPkgRepoBase):
+    pass
+
+
+class AutoPkgRepoRead(AutoPkgRepoBase):
+    id: UUID
+    last_synced_at: datetime | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AutoPkgRecipeBase(BaseModel):
+    identifier: str
+    name: str
+    parent_recipe: str | None = None
+    is_enabled: bool = True
+    is_override: bool = False
+    auto_promote: bool = False
+    target_catalogs: list[str] | None = None
+
+
+class AutoPkgRecipeCreate(AutoPkgRecipeBase):
+    repo_id: UUID | None = None
+    override_data: dict | None = None
+    trust_info: dict | None = None
+    input_variables: dict | None = None
+
+
+class AutoPkgRecipeUpdate(BaseModel):
+    identifier: str | None = None
+    name: str | None = None
+    parent_recipe: str | None = None
+    is_enabled: bool | None = None
+    is_override: bool | None = None
+    auto_promote: bool | None = None
+    target_catalogs: list[str] | None = None
+    override_data: dict | None = None
+    trust_info: dict | None = None
+    input_variables: dict | None = None
+
+
+class AutoPkgRecipeRead(AutoPkgRecipeBase):
+    id: UUID
+    repo_id: UUID | None = None
+    override_data: dict | None = None
+    trust_info: dict | None = None
+    input_variables: dict | None = None
+    last_run_at: datetime | None = None
+    last_run_status: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TriggerRunRequest(BaseModel):
+    recipe_names: list[str] | None = None
+
+
+class RunResultCreate(BaseModel):
+    recipe_identifier: str
+    recipe_name: str
+    status: str
+    imported_version: str | None = None
+    imported_pkg_path: str | None = None
+    imported_pkginfo_path: str | None = None
+    imported_catalogs: list[str] | None = None
+    virustotal_results: dict | None = None
+    trust_info_diff: dict | None = None
+    log_output: str | None = None
+    error_message: str | None = None
+    duration_seconds: int | None = None
+
+
+class RunResultRead(BaseModel):
+    id: UUID
+    recipe_identifier: str
+    recipe_name: str
+    status: str
+    imported_version: str | None = None
+    imported_pkg_path: str | None = None
+    imported_pkginfo_path: str | None = None
+    imported_catalogs: list[str] | None = None
+    virustotal_results: dict | None = None
+    trust_info_diff: dict | None = None
+    approval_status: str
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    approval_comment: str | None = None
+    log_output: str | None = None
+    error_message: str | None = None
+    duration_seconds: int | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AutoPkgRunRead(BaseModel):
+    id: UUID
+    status: str
+    trigger_type: str
+    triggered_by: str | None = None
+    github_run_id: str | None = None
+    github_run_url: str | None = None
+    recipe_filter: list[str] | None = None
+    total_recipes: int | None = None
+    recipes_succeeded: int | None = None
+    recipes_failed: int | None = None
+    recipes_imported: int | None = None
+    error_message: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    created_at: datetime
+    results: list[RunResultRead] = []
+
+    model_config = {"from_attributes": True}
+
+
+class ApprovalRequest(BaseModel):
+    approved: bool
+    comment: str | None = None

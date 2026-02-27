@@ -22,16 +22,20 @@ import os
 import plistlib
 import subprocess
 import sys
+import time
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
 
 import git
 import psutil
+import requests
 
 SLACK_WEBHOOK = os.environ.get("SUMMARY_WEBHOOK_TOKEN", None)
 SUMMARY_WEBHOOK = os.environ.get("SUMMARY_WEBHOOK_TOKEN", None)
 MUNKI_WEBSITE = os.environ.get("MUNKI_WEBSITE", "munki.example.com")
+API_URL = os.environ.get("AUTOMUNKI_API_URL", None)
+RUN_ID = os.environ.get("AUTOMUNKI_RUN_ID", None)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -156,10 +160,56 @@ def run_cmd(cmd):
     return run.stdout, run.stderr, run.returncode
 
 
+def report_to_api(recipe, status, start_time, error_message=None):
+    """Report recipe results to the AutoMunki API if configured."""
+    if not API_URL or not RUN_ID:
+        return
+
+    duration = int(time.time() - start_time)
+    identifier = recipe.plist.get("Identifier", f"local.munki.{recipe.name}")
+
+    payload = {
+        "recipe_identifier": identifier,
+        "recipe_name": recipe.name,
+        "status": status,
+        "duration_seconds": duration,
+    }
+
+    if status == "imported" and recipe.results.get("imported"):
+        item = recipe.results["imported"][0]
+        payload["imported_version"] = item.get("version")
+        payload["imported_pkg_path"] = item.get("pkg_repo_path")
+        payload["imported_pkginfo_path"] = item.get("pkginfo_path")
+        payload["imported_catalogs"] = (
+            item.get("catalogs", "").split(", ")
+            if isinstance(item.get("catalogs"), str)
+            else item.get("catalogs")
+        )
+
+    if error_message:
+        payload["error_message"] = error_message
+
+    if status == "trust_failed" and recipe.results.get("message"):
+        payload["error_message"] = recipe.results["message"]
+
+    try:
+        url = f"{API_URL}/api/v1/autopkg/runs/{RUN_ID}/results"
+        response = requests.post(url, json=payload, timeout=30)
+        if response.status_code == 200:
+            logging.info(f"Reported {recipe.name} ({status}) to API")
+        else:
+            logging.warning(
+                f"API report failed for {recipe.name}: {response.status_code}"
+            )
+    except Exception as exc:
+        logging.warning(f"Failed to report to API: {exc}")
+
+
 def handle_recipe(recipe):
     logging.info(f"Handling {recipe.name}")
     repo = os.environ.get("GITHUB_REPOSITORY", None)
     munki_repo = git.Repo(os.getenv("GITHUB_WORKSPACE", "./"))
+    start_time = time.time()
     recipe.verify_trust_info()
     if recipe.verified:
         recipe.run()
@@ -179,6 +229,18 @@ def handle_recipe(recipe):
             title = f"feat: Update { recipe.name } to { recipe.updated_version }"
             body = f"Updated { recipe.name } to { recipe.updated_version }"
             create_pull_request(munki_repo, title, body, recipe.branch)
+            report_to_api(recipe, "imported", start_time)
+        elif recipe.error or recipe.results.get("failed"):
+            error_msg = ""
+            if recipe.results.get("failed") and isinstance(
+                recipe.results["failed"], list
+            ):
+                error_msg = "; ".join(
+                    f.get("message", "") for f in recipe.results["failed"]
+                )
+            report_to_api(recipe, "failed", start_time, error_message=error_msg)
+        else:
+            report_to_api(recipe, "no_change", start_time)
     else:
         logging.info(f"Updating trust for {recipe.name}")
         recipe.update_trust_info()
@@ -191,6 +253,7 @@ def handle_recipe(recipe):
         title = f"feat: Update trust for { recipe.name }"
         body = recipe.results["message"]
         create_pull_request(munki_repo, title, body, branch_name)
+        report_to_api(recipe, "trust_failed", start_time)
     slack_payload = slack_recipe_block(recipe, MUNKI_WEBSITE)
     if slack_payload:
         slack_alert(slack_payload, SLACK_WEBHOOK)
@@ -215,12 +278,38 @@ def parse_recipes(recipes, action_recipe=None):
     return map(Recipe, r_list)
 
 
+def complete_run():
+    """Notify the API that the run is complete."""
+    if not API_URL or not RUN_ID:
+        return
+    try:
+        url = f"{API_URL}/api/v1/autopkg/runs/{RUN_ID}/complete"
+        response = requests.post(url, json={}, timeout=30)
+        if response.status_code == 200:
+            logging.info("Notified API that run is complete")
+        else:
+            logging.warning(
+                f"Failed to notify API of completion: {response.status_code}"
+            )
+    except Exception as exc:
+        logging.warning(f"Failed to notify API of completion: {exc}")
+
+
 def main():
+    global API_URL, RUN_ID
+
     parser = ArgumentParser(description="Wrap AutoPkg with git support.")
     parser.add_argument(
         "-l", "--list", help="Path to a plist or JSON list of recipe names."
     )
+    parser.add_argument("--api-url", help="AutoMunki API URL for reporting results.")
+    parser.add_argument("--run-id", help="AutoMunki run ID for result reporting.")
     args = parser.parse_args()
+
+    if args.api_url:
+        API_URL = args.api_url
+    if args.run_id:
+        RUN_ID = args.run_id
 
     action_recipe = os.environ.get("RECIPE", None)
 
@@ -245,6 +334,8 @@ def main():
                 logging.warning(f"Recipe execution failed: {exc}")
     if results:
         slack_alert(slack_summary_block(results), SUMMARY_WEBHOOK)
+
+    complete_run()
 
 
 if __name__ == "__main__":

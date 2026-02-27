@@ -1,0 +1,116 @@
+name: Repo Sync to S3
+
+on:
+  workflow_dispatch:
+    inputs:
+      sync_job_id:
+        description: AutoMunki sync job ID
+        required: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      API_URL: ${{ vars.AUTOMUNKI_API_URL }}
+      SYNC_JOB_ID: ${{ github.event.inputs.sync_job_id }}
+
+    steps:
+    - name: Install dependencies
+      run: pip install requests
+
+    - name: Compile repo from API
+      run: |
+        python3 << 'SCRIPT'
+        import os
+        import json
+        import requests
+
+        api_url = os.environ.get("API_URL", "")
+        if not api_url:
+            print("No API_URL configured, skipping compilation")
+            exit(0)
+
+        os.makedirs("repo/catalogs", exist_ok=True)
+        os.makedirs("repo/manifests", exist_ok=True)
+        os.makedirs("repo/pkgsinfo", exist_ok=True)
+
+        # Fetch and compile catalogs
+        catalogs = requests.get(f"{api_url}/api/v1/catalogs").json()
+        for cat in catalogs:
+            resp = requests.post(f"{api_url}/api/v1/catalogs/{cat['id']}/compile")
+            if resp.status_code == 200:
+                with open(f"repo/catalogs/{cat['name']}", "wb") as f:
+                    f.write(resp.content)
+                print(f"Compiled catalog: {cat['name']}")
+
+        # Fetch and compile manifests
+        manifests = requests.get(f"{api_url}/api/v1/manifests").json()
+        for m in manifests:
+            resp = requests.get(f"{api_url}/api/v1/manifests/{m['id']}/compile")
+            if resp.status_code == 200:
+                with open(f"repo/manifests/{m['name']}", "wb") as f:
+                    f.write(resp.content)
+                print(f"Compiled manifest: {m['name']}")
+
+        # Fetch and compile pkgsinfo
+        page = 1
+        while True:
+            resp = requests.get(f"{api_url}/api/v1/pkginfo?page={page}&page_size=100")
+            data = resp.json()
+            for pkg in data["items"]:
+                plist_resp = requests.get(f"{api_url}/api/v1/pkginfo/{pkg['id']}/plist")
+                if plist_resp.status_code == 200:
+                    filename = f"{pkg['name']}-{pkg['version']}.plist"
+                    with open(f"repo/pkgsinfo/{filename}", "wb") as f:
+                        f.write(plist_resp.content)
+            if page >= data["total_pages"]:
+                break
+            page += 1
+
+        print("Repo compilation complete")
+        SCRIPT
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+    - name: Sync catalogs to S3
+      run: aws s3 sync ./repo/catalogs/ s3://${{ secrets.AWS_S3_BUCKET }}/catalogs/ --delete
+
+    - name: Sync manifests to S3
+      run: aws s3 sync ./repo/manifests/ s3://${{ secrets.AWS_S3_BUCKET }}/manifests/ --delete
+
+    - name: Sync pkgsinfo to S3
+      run: aws s3 sync ./repo/pkgsinfo/ s3://${{ secrets.AWS_S3_BUCKET }}/pkgsinfo/ --delete
+
+    - name: Invalidate CloudFront cache
+      if: vars.CLOUDFRONT_DISTRIBUTION_ID != ''
+      run: |
+        aws cloudfront create-invalidation \
+          --distribution-id ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }} \
+          --paths "/catalogs/*" "/manifests/*" "/pkgsinfo/*"
+
+    - name: Report sync completion
+      if: always()
+      run: |
+        python3 << 'SCRIPT'
+        import os
+        import requests
+
+        api_url = os.environ.get("API_URL", "")
+        sync_job_id = os.environ.get("SYNC_JOB_ID", "")
+        if not api_url or not sync_job_id:
+            exit(0)
+
+        # Count files synced
+        file_count = 0
+        for root, dirs, files in os.walk("repo"):
+            file_count += len(files)
+
+        status = "completed" if os.environ.get("GITHUB_ACTION_STATUS") != "failure" else "failed"
+        print(f"Sync {status}: {file_count} files")
+        SCRIPT
