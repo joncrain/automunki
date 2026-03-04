@@ -78,6 +78,7 @@ class GitHubRecipeRepo(UUIDMixin, Base):
     description: Mapped[str | None] = mapped_column(Text)
     stars: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[str | None] = mapped_column(Text)
+    default_branch: Mapped[str | None] = mapped_column(Text)
     synced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -107,6 +108,13 @@ class GitHubRecipe(UUIDMixin, Base):
     repo: Mapped["GitHubRecipeRepo"] = relationship(back_populates="cached_recipes")
 
 
+class TrustStatus(str, enum.Enum):
+    unknown = "unknown"
+    verified = "verified"
+    failed = "failed"
+    pending_approval = "pending_approval"
+
+
 class AutoPkgRecipe(UUIDMixin, Base):
     __tablename__ = "autopkg_recipe"
 
@@ -129,6 +137,14 @@ class AutoPkgRecipe(UUIDMixin, Base):
     auto_promote: Mapped[bool] = mapped_column(Boolean, default=False)
     target_catalogs: Mapped[list | None] = mapped_column(JSONB)
 
+    trust_status: Mapped[str] = mapped_column(
+        Text, default="unknown", server_default="unknown"
+    )
+    trust_diff: Mapped[dict | None] = mapped_column(JSONB)
+    trust_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trust_approved_by: Mapped[str | None] = mapped_column(Text)
+    trust_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_run_status: Mapped[str | None] = mapped_column(Text)
 
@@ -140,6 +156,42 @@ class AutoPkgRecipe(UUIDMixin, Base):
     )
 
     repo: Mapped["AutoPkgRepo | None"] = relationship(back_populates="recipes")
+    trust_change_requests: Mapped[list["TrustChangeRequest"]] = relationship(
+        back_populates="recipe", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class TrustChangeRequestStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class TrustChangeRequest(UUIDMixin, Base):
+    __tablename__ = "trust_change_request"
+
+    recipe_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("autopkg_recipe.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    old_trust_info: Mapped[dict | None] = mapped_column(JSONB)
+    new_trust_info: Mapped[dict | None] = mapped_column(JSONB)
+    diff: Mapped[dict | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(
+        Text, default="pending", server_default="pending"
+    )
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(Text)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    comment: Mapped[str | None] = mapped_column(Text)
+
+    recipe: Mapped["AutoPkgRecipe"] = relationship(
+        back_populates="trust_change_requests"
+    )
 
 
 class AutoPkgRun(UUIDMixin, Base):

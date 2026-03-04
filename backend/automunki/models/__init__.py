@@ -5,6 +5,7 @@ from automunki.models.autopkg import (
     AutoPkgRepo,
     AutoPkgRun,
     AutoPkgRunResult,
+    TrustChangeRequest,
 )
 from automunki.models.client import ClientInstallReport, ClientMachine
 from automunki.models.munki import (
@@ -28,6 +29,7 @@ __all__ = [
     "AutoPkgRepo",
     "AutoPkgRun",
     "AutoPkgRunResult",
+    "TrustChangeRequest",
     "Catalog",
     "ClientInstallReport",
     "ClientMachine",

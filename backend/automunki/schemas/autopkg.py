@@ -38,6 +38,8 @@ class AutoPkgRecipeCreate(AutoPkgRecipeBase):
     override_data: dict | None = None
     trust_info: dict | None = None
     input_variables: dict | None = None
+    github_repo: str | None = None
+    recipe_path: str | None = None
 
 
 class AutoPkgRecipeUpdate(BaseModel):
@@ -59,6 +61,11 @@ class AutoPkgRecipeRead(AutoPkgRecipeBase):
     override_data: dict | None = None
     trust_info: dict | None = None
     input_variables: dict | None = None
+    trust_status: str = "unknown"
+    trust_diff: dict | None = None
+    trust_verified_at: datetime | None = None
+    trust_approved_by: str | None = None
+    trust_approved_at: datetime | None = None
     last_run_at: datetime | None = None
     last_run_status: str | None = None
     created_at: datetime
@@ -135,6 +142,29 @@ class ApprovalRequest(BaseModel):
     comment: str | None = None
 
 
+# ── Trust change request schemas ─────────────────────────────────────────
+
+
+class TrustChangeRequestRead(BaseModel):
+    id: UUID
+    recipe_id: UUID
+    old_trust_info: dict | None = None
+    new_trust_info: dict | None = None
+    diff: dict | None = None
+    status: str
+    requested_at: datetime
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    comment: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class TrustApprovalRequest(BaseModel):
+    approved: bool
+    comment: str | None = None
+
+
 # ── GitHub recipe cache schemas ──────────────────────────────────────────
 
 
@@ -147,6 +177,7 @@ class GitHubRecipeRepoRead(BaseModel):
     description: str | None = None
     stars: int = 0
     updated_at: str | None = None
+    default_branch: str | None = None
     synced_at: datetime
     cached_recipes: list["GitHubRecipeRead"] = []
 

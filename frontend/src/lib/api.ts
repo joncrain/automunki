@@ -165,20 +165,28 @@ export interface AutoPkgRecipeRead {
 	override_data: unknown;
 	trust_info: unknown;
 	input_variables: unknown;
+	trust_status: string;
+	trust_diff: unknown;
+	trust_verified_at: string | null;
+	trust_approved_by: string | null;
+	trust_approved_at: string | null;
 	last_run_at: string | null;
 	last_run_status: string | null;
 	created_at: string;
 	updated_at: string;
 }
 
-export interface AutoPkgRepoRead {
+export interface TrustChangeRequestRead {
 	id: string;
-	url: string;
-	name: string;
-	description: string | null;
-	is_active: boolean;
-	last_synced_at: string | null;
-	created_at: string;
+	recipe_id: string;
+	old_trust_info: unknown;
+	new_trust_info: unknown;
+	diff: unknown;
+	status: string;
+	requested_at: string;
+	reviewed_by: string | null;
+	reviewed_at: string | null;
+	comment: string | null;
 }
 
 export interface CachedGitHubRecipe {
@@ -200,6 +208,7 @@ export interface CachedGitHubRepo {
 	description: string | null;
 	stars: number;
 	updated_at: string | null;
+	default_branch: string | null;
 	synced_at: string;
 	cached_recipes: CachedGitHubRecipe[];
 }

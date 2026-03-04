@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Identifier</key>
+	<string>local.munki.Ghostty</string>
+	<key>Input</key>
+	<dict>
+		<key>MUNKI_REPO_SUBDIR</key>
+		<string>apps/%NAME%</string>
+		<key>NAME</key>
+		<string>Ghostty</string>
+		<key>pkginfo</key>
+		<dict>
+			<key>catalogs</key>
+			<array>
+				<string>testing</string>
+			</array>
+			<key>description</key>
+			<string>Ghostty is a fast, feature-rich, and cross-platform terminal emulator that uses platform-native UI and GPU acceleration.</string>
+			<key>developer</key>
+			<string>Mitchell Hashimoto</string>
+			<key>display_name</key>
+			<string>Ghostty</string>
+			<key>name</key>
+			<string>%NAME%</string>
+			<key>unattended_install</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>ParentRecipe</key>
+	<string>com.github.autopkg.wardsparadox.munki.Ghostty</string>
+	<key>ParentRecipeTrustInfo</key>
+	<dict>
+		<key>non_core_processors</key>
+		<dict/>
+		<key>parent_recipes</key>
+		<dict>
+			<key>com.github.autopkg.wardsparadox.download.Ghostty</key>
+			<dict>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.wardsparadox-recipes/Ghostty/Ghostty.download.recipe.yaml</string>
+				<key>sha256_hash</key>
+				<string>65ef8f31d7a8cab50e944447d07c1aa45901486ea319d56118c077bc2f1dd96b</string>
+			</dict>
+			<key>com.github.autopkg.wardsparadox.munki.Ghostty</key>
+			<dict>
+				<key>path</key>
+				<string>~/Library/AutoPkg/RecipeRepos/com.github.autopkg.wardsparadox-recipes/Ghostty/Ghostty.munki.recipe.yaml</string>
+				<key>sha256_hash</key>
+				<string>2ab1df408a507676523f8eeee29132340ee8f2c2783f7bdeb9b9ad496d7ef6e4</string>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

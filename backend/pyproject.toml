@@ -17,6 +17,7 @@ dependencies = [
     "boto3>=1.35.0",
     "python-multipart>=0.0.9",
     "prometheus-fastapi-instrumentator>=7.0.0",
+    "pyyaml>=6.0.0",
 ]
 
 [project.optional-dependencies]

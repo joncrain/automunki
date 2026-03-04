@@ -105,12 +105,10 @@ export default function DiscoverRecipesPage() {
 			api.post<AutoPkgRecipeRead>("/autopkg/recipes/add-override", {
 				identifier: recipe.identifier_guess,
 				name: recipe.name,
-				parent_recipe: recipe.identifier_guess.replace(
-					/\.munki\./,
-					".download.",
-				),
 				is_enabled: true,
 				is_override: true,
+				github_repo: recipe.repo_full_name,
+				recipe_path: recipe.path,
 			}),
 		onSuccess: (_data, recipe) => {
 			toast.success(`Added override for ${recipe.name}`);
@@ -433,18 +431,14 @@ function RepoRecipesDialog({
 	});
 
 	const addMutation = useMutation({
-		mutationFn: (
-			recipe: DiscoveredRecipe | { name: string; identifier_guess: string },
-		) =>
+		mutationFn: (recipe: DiscoveredRecipe) =>
 			api.post<AutoPkgRecipeRead>("/autopkg/recipes/add-override", {
 				identifier: recipe.identifier_guess,
 				name: recipe.name,
-				parent_recipe: recipe.identifier_guess.replace(
-					/\.munki\./,
-					".download.",
-				),
 				is_enabled: true,
 				is_override: true,
+				github_repo: recipe.repo_full_name,
+				recipe_path: recipe.path,
 			}),
 		onSuccess: (_data, recipe) => {
 			toast.success(`Added override for ${recipe.name}`);

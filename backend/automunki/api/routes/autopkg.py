@@ -11,7 +11,6 @@ from automunki.core.security import current_optional_user
 from automunki.models.autopkg import (
     ApprovalStatus,
     AutoPkgRecipe,
-    AutoPkgRepo,
     AutoPkgRun,
     AutoPkgRunResult,
     GitHubRecipe,
@@ -19,6 +18,7 @@ from automunki.models.autopkg import (
     RecipeResultStatus,
     RunStatus,
     RunTriggerType,
+    TrustChangeRequest,
 )
 from automunki.models.user import User
 from automunki.schemas.autopkg import (
@@ -26,13 +26,13 @@ from automunki.schemas.autopkg import (
     AutoPkgRecipeCreate,
     AutoPkgRecipeRead,
     AutoPkgRecipeUpdate,
-    AutoPkgRepoCreate,
-    AutoPkgRepoRead,
     AutoPkgRunRead,
     GitHubRecipeRepoRead,
     RunResultCreate,
     RunResultRead,
     TriggerRunRequest,
+    TrustApprovalRequest,
+    TrustChangeRequestRead,
 )
 from automunki.schemas.common import PaginatedResponse
 from automunki.services.audit import create_audit_entry
@@ -42,6 +42,15 @@ from automunki.services.autopkg import (
     sync_all_recipes_to_cache,
     sync_repo_recipes_to_cache,
     sync_repos_to_cache,
+)
+from automunki.services.trust import (
+    GitHubRateLimitError,
+    build_location_cache,
+    build_override_data,
+    compute_trust_info,
+    fetch_recipe_content,
+    infer_repos_from_trust_info,
+    verify_trust,
 )
 
 router = APIRouter(prefix="/autopkg", tags=["autopkg"])
@@ -289,6 +298,31 @@ async def update_recipe(
     return AutoPkgRecipeRead.model_validate(recipe)
 
 
+@router.delete("/recipes/{recipe_id}")
+async def delete_recipe(
+    recipe_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    recipe = await session.get(AutoPkgRecipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    await create_audit_entry(
+        session,
+        action="delete",
+        entity_type="autopkg_recipe",
+        entity_id=str(recipe_id),
+        entity_name=recipe.name,
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+    )
+
+    await session.delete(recipe)
+    await session.commit()
+    return {"message": f"Recipe {recipe.name} deleted"}
+
+
 @router.get("/recipes/discover", response_model=list[GitHubRecipeRepoRead])
 async def discover_recipes(session: AsyncSession = Depends(get_session)):
     """List all cached GitHub recipe repos from the local DB."""
@@ -383,6 +417,327 @@ async def search_recipes(
     return {"results": results, "total": len(results)}
 
 
+# ── Trust verification ────────────────────────────────────────────────────
+
+
+@router.get("/recipes/trust-status", response_model=list[AutoPkgRecipeRead])
+async def list_trust_status(
+    session: AsyncSession = Depends(get_session),
+    status: str | None = Query(None),
+):
+    """List all recipes with their trust status. Optionally filter by status."""
+    query = (
+        select(AutoPkgRecipe)
+        .where(AutoPkgRecipe.is_override.is_(True))
+        .order_by(AutoPkgRecipe.name)
+    )
+    if status:
+        query = query.where(AutoPkgRecipe.trust_status == status)
+    result = await session.execute(query)
+    return [AutoPkgRecipeRead.model_validate(r) for r in result.scalars().all()]
+
+
+@router.post("/recipes/{recipe_id}/verify-trust")
+async def verify_recipe_trust(
+    recipe_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    """
+    Verify trust for a single recipe by comparing stored trust_info
+    against freshly computed hashes from GitHub.
+    """
+    recipe = await session.get(AutoPkgRecipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    result = await verify_trust(
+        stored_trust_info=recipe.trust_info,
+        parent_recipe_identifier=recipe.parent_recipe,
+    )
+
+    recipe.trust_verified_at = datetime.now(timezone.utc)
+
+    if result.status == "verified":
+        recipe.trust_status = "verified"
+        recipe.trust_diff = None
+    elif result.status == "failed":
+        recipe.trust_status = "pending_approval"
+        recipe.trust_diff = result.diff
+
+        location_cache = await build_location_cache(session)
+        new_trust = await compute_trust_info(
+            recipe.parent_recipe,
+            existing_trust_info=recipe.trust_info,
+            location_cache=location_cache,
+        )
+        change_request = TrustChangeRequest(
+            recipe_id=recipe.id,
+            old_trust_info=recipe.trust_info,
+            new_trust_info=new_trust,
+            diff=result.diff,
+            status="pending",
+        )
+        session.add(change_request)
+    else:
+        recipe.trust_status = "unknown"
+        recipe.trust_diff = None
+
+    await create_audit_entry(
+        session,
+        action="verify_trust",
+        entity_type="autopkg_recipe",
+        entity_id=str(recipe_id),
+        entity_name=recipe.name,
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+        notes=f"Trust status: {result.status}"
+        + (f" - {result.error}" if result.error else ""),
+    )
+
+    await session.commit()
+    await session.refresh(recipe)
+    return {
+        "recipe_id": str(recipe_id),
+        "name": recipe.name,
+        "trust_status": recipe.trust_status,
+        "diff": result.diff if result.diff else None,
+        "error": result.error,
+    }
+
+
+@router.post("/recipes/{recipe_id}/update-trust")
+async def update_recipe_trust(
+    recipe_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    """
+    Update trust info for a recipe with freshly computed values.
+    Re-resolves all parent recipes and stores github_repo/github_path
+    for fast future verification. Should only be called after approval.
+    """
+    recipe = await session.get(AutoPkgRecipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    location_cache = await build_location_cache(session)
+
+    try:
+        new_trust = await compute_trust_info(
+            recipe.parent_recipe,
+            existing_trust_info=recipe.trust_info,
+            location_cache=location_cache,
+        )
+    except GitHubRateLimitError:
+        raise HTTPException(
+            status_code=503,
+            detail="GitHub API rate limit exceeded. Please try again later.",
+        )
+
+    if not new_trust.get("parent_recipes"):
+        raise HTTPException(
+            status_code=502,
+            detail="Could not resolve parent recipes from GitHub. "
+            "Check that the parent recipe identifier is correct.",
+        )
+
+    old_trust = recipe.trust_info
+    recipe.trust_info = new_trust
+    recipe.trust_status = "verified"
+    recipe.trust_diff = None
+    recipe.trust_verified_at = datetime.now(timezone.utc)
+    recipe.trust_approved_by = user.email if user else "system"
+    recipe.trust_approved_at = datetime.now(timezone.utc)
+
+    await create_audit_entry(
+        session,
+        action="update_trust",
+        entity_type="autopkg_recipe",
+        entity_id=str(recipe_id),
+        entity_name=recipe.name,
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+        before_snapshot={"trust_info": old_trust},
+        after_snapshot={"trust_info": new_trust},
+    )
+
+    await session.commit()
+    return {
+        "recipe_id": str(recipe_id),
+        "name": recipe.name,
+        "trust_status": "verified",
+    }
+
+
+@router.post("/recipes/{recipe_id}/approve-trust")
+async def approve_recipe_trust(
+    recipe_id: uuid.UUID,
+    data: TrustApprovalRequest,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    """
+    Approve or reject a pending trust change. If approved, updates the
+    stored trust_info with the new computed values.
+    """
+    recipe = await session.get(AutoPkgRecipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    pending_requests = await session.execute(
+        select(TrustChangeRequest)
+        .where(TrustChangeRequest.recipe_id == recipe_id)
+        .where(TrustChangeRequest.status == "pending")
+        .order_by(TrustChangeRequest.requested_at.desc())
+    )
+    change_request = pending_requests.scalars().first()
+    if not change_request:
+        raise HTTPException(status_code=400, detail="No pending trust change request")
+
+    reviewer = user.email if user else "anonymous"
+    now = datetime.now(timezone.utc)
+
+    if data.approved:
+        change_request.status = "approved"
+        change_request.reviewed_by = reviewer
+        change_request.reviewed_at = now
+        change_request.comment = data.comment
+
+        recipe.trust_info = change_request.new_trust_info
+        recipe.trust_status = "verified"
+        recipe.trust_diff = None
+        recipe.trust_approved_by = reviewer
+        recipe.trust_approved_at = now
+    else:
+        change_request.status = "rejected"
+        change_request.reviewed_by = reviewer
+        change_request.reviewed_at = now
+        change_request.comment = data.comment
+
+        recipe.trust_status = "failed"
+
+    await create_audit_entry(
+        session,
+        action="approve_trust" if data.approved else "reject_trust",
+        entity_type="autopkg_recipe",
+        entity_id=str(recipe_id),
+        entity_name=recipe.name,
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+        notes=data.comment,
+    )
+
+    await session.commit()
+    return {
+        "recipe_id": str(recipe_id),
+        "name": recipe.name,
+        "trust_status": recipe.trust_status,
+        "approved": data.approved,
+    }
+
+
+@router.get(
+    "/trust-changes",
+    response_model=list[TrustChangeRequestRead],
+)
+async def list_trust_changes(
+    session: AsyncSession = Depends(get_session),
+    status: str | None = Query(None),
+):
+    """List trust change requests, optionally filtered by status."""
+    query = select(TrustChangeRequest).order_by(TrustChangeRequest.requested_at.desc())
+    if status:
+        query = query.where(TrustChangeRequest.status == status)
+    result = await session.execute(query)
+    return [TrustChangeRequestRead.model_validate(r) for r in result.scalars().all()]
+
+
+@router.post("/repos/update")
+async def update_repos_and_verify_trust(
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    """
+    Trigger a 'repo update': re-fetch recipe file hashes from GitHub
+    for all enabled overrides, then run trust verification on each.
+    Returns a summary of results.
+    """
+    result = await session.execute(
+        select(AutoPkgRecipe).where(
+            AutoPkgRecipe.is_override.is_(True),
+            AutoPkgRecipe.is_enabled.is_(True),
+            AutoPkgRecipe.trust_info.isnot(None),
+        )
+    )
+    recipes = result.scalars().all()
+
+    summary = {"total": len(recipes), "verified": 0, "failed": 0, "errors": 0}
+
+    location_cache = await build_location_cache(session)
+
+    rate_limited = False
+    for recipe in recipes:
+        if rate_limited:
+            summary["errors"] += 1
+            continue
+        try:
+            verification = await verify_trust(
+                stored_trust_info=recipe.trust_info,
+                parent_recipe_identifier=recipe.parent_recipe,
+            )
+            recipe.trust_verified_at = datetime.now(timezone.utc)
+
+            if verification.status == "verified":
+                recipe.trust_status = "verified"
+                recipe.trust_diff = None
+                summary["verified"] += 1
+            elif verification.status == "failed":
+                recipe.trust_status = "pending_approval"
+                recipe.trust_diff = verification.diff
+
+                new_trust = await compute_trust_info(
+                    recipe.parent_recipe,
+                    existing_trust_info=recipe.trust_info,
+                    location_cache=location_cache,
+                )
+                change_request = TrustChangeRequest(
+                    recipe_id=recipe.id,
+                    old_trust_info=recipe.trust_info,
+                    new_trust_info=new_trust,
+                    diff=verification.diff,
+                    status="pending",
+                )
+                session.add(change_request)
+                summary["failed"] += 1
+            elif verification.error and "rate limit" in verification.error.lower():
+                rate_limited = True
+                summary["errors"] += 1
+            else:
+                summary["errors"] += 1
+        except GitHubRateLimitError:
+            rate_limited = True
+            summary["errors"] += 1
+        except Exception:
+            summary["errors"] += 1
+
+    if rate_limited:
+        summary["rate_limited"] = True
+
+    await create_audit_entry(
+        session,
+        action="repo_update",
+        entity_type="autopkg_system",
+        entity_id="trust_verification",
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+        after_snapshot=summary,
+    )
+
+    await session.commit()
+    return summary
+
+
 # ── GitHub cache sync ────────────────────────────────────────────────────
 
 
@@ -428,15 +783,65 @@ async def add_recipe_override(
     session: AsyncSession = Depends(get_session),
     user: User | None = Depends(current_optional_user),
 ):
-    """Add a discovered recipe as an override in the DB. Links to its repo."""
+    """
+    Add a discovered recipe as an override in the DB.
+    Requires github_repo and recipe_path to fetch the actual recipe
+    content and populate identifier, input_variables, trust_info, and parent_recipe.
+    """
+    if not data.github_repo or not data.recipe_path:
+        raise HTTPException(
+            status_code=400,
+            detail="github_repo and recipe_path are required to create an override",
+        )
+
+    try:
+        recipe_content = await fetch_recipe_content(data.github_repo, data.recipe_path)
+    except GitHubRateLimitError:
+        raise HTTPException(
+            status_code=503,
+            detail="GitHub API rate limit exceeded. Please try again later.",
+        )
+
+    if not recipe_content:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not fetch recipe from GitHub: {data.github_repo}/{data.recipe_path}",
+        )
+
+    location_cache = await build_location_cache(session)
+
+    try:
+        override_info = await build_override_data(
+            recipe_content,
+            data.github_repo,
+            data.recipe_path,
+            location_cache=location_cache,
+        )
+    except GitHubRateLimitError:
+        raise HTTPException(
+            status_code=503,
+            detail="GitHub API rate limit exceeded while building override. Please try again later.",
+        )
+
+    payload = {
+        "identifier": override_info["identifier"],
+        "name": data.name,
+        "parent_recipe": override_info["parent_recipe"],
+        "input_variables": override_info.get("input_variables"),
+        "trust_info": override_info.get("trust_info"),
+        "is_override": True,
+        "is_enabled": data.is_enabled,
+        "auto_promote": data.auto_promote,
+        "target_catalogs": data.target_catalogs,
+        "trust_status": "verified",
+    }
+
     existing = await session.execute(
-        select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == data.identifier)
+        select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == payload["identifier"])
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Recipe override already exists")
 
-    payload = data.model_dump()
-    payload["is_override"] = True
     recipe = AutoPkgRecipe(**payload)
     session.add(recipe)
 
@@ -448,7 +853,7 @@ async def add_recipe_override(
         entity_name=recipe.name,
         user_id=user.id if user else None,
         user_email=user.email if user else None,
-        after_snapshot=data.model_dump(),
+        after_snapshot=payload,
     )
 
     await session.commit()
@@ -456,68 +861,36 @@ async def add_recipe_override(
     return AutoPkgRecipeRead.model_validate(recipe)
 
 
-# ── Repo management ──────────────────────────────────────────────────────
+# ── Inferred repos ────────────────────────────────────────────────────────
 
 
-@router.get("/repos", response_model=list[AutoPkgRepoRead])
-async def list_repos(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(AutoPkgRepo).order_by(AutoPkgRepo.name))
-    return [AutoPkgRepoRead.model_validate(r) for r in result.scalars().all()]
-
-
-@router.post("/repos", response_model=AutoPkgRepoRead)
-async def add_repo(
-    data: AutoPkgRepoCreate,
+@router.get("/repos/inferred")
+async def list_inferred_repos(
     session: AsyncSession = Depends(get_session),
-    user: User | None = Depends(current_optional_user),
 ):
-    existing = await session.execute(
-        select(AutoPkgRepo).where(AutoPkgRepo.url == data.url)
+    """
+    Return the set of GitHub repos needed for autopkg runs, inferred
+    from the trust_info of all enabled override recipes.
+    """
+    result = await session.execute(
+        select(AutoPkgRecipe).where(
+            AutoPkgRecipe.is_override.is_(True),
+            AutoPkgRecipe.is_enabled.is_(True),
+            AutoPkgRecipe.trust_info.isnot(None),
+        )
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Repo already exists")
+    recipes = result.scalars().all()
 
-    repo = AutoPkgRepo(**data.model_dump())
-    session.add(repo)
+    all_repos: set[str] = set()
+    for recipe in recipes:
+        repos = infer_repos_from_trust_info(recipe.trust_info)
+        all_repos.update(repos)
 
-    await create_audit_entry(
-        session,
-        action="add_repo",
-        entity_type="autopkg_repo",
-        entity_id=str(repo.id),
-        entity_name=repo.name,
-        user_id=user.id if user else None,
-        user_email=user.email if user else None,
-    )
-
-    await session.commit()
-    await session.refresh(repo)
-    return AutoPkgRepoRead.model_validate(repo)
-
-
-@router.delete("/repos/{repo_id}")
-async def remove_repo(
-    repo_id: uuid.UUID,
-    session: AsyncSession = Depends(get_session),
-    user: User | None = Depends(current_optional_user),
-):
-    repo = await session.get(AutoPkgRepo, repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repo not found")
-
-    await create_audit_entry(
-        session,
-        action="remove_repo",
-        entity_type="autopkg_repo",
-        entity_id=str(repo_id),
-        entity_name=repo.name,
-        user_id=user.id if user else None,
-        user_email=user.email if user else None,
-    )
-
-    await session.delete(repo)
-    await session.commit()
-    return {"message": "Repo removed"}
+    return {
+        "repos": sorted(all_repos),
+        "total": len(all_repos),
+        "recipe_count": len(recipes),
+    }
 
 
 @router.post("/results/{result_id}/approve")

@@ -92,6 +92,7 @@ async def discover_autopkg_repos() -> list[dict]:
                         "description": repo.get("description"),
                         "stars": repo.get("stargazers_count", 0),
                         "updated_at": repo.get("updated_at"),
+                        "default_branch": repo.get("default_branch", "main"),
                     }
                 )
             page += 1
@@ -99,23 +100,35 @@ async def discover_autopkg_repos() -> list[dict]:
     return repos
 
 
-async def discover_recipes_in_repo(repo_full_name: str) -> list[dict]:
+async def discover_recipes_in_repo(
+    repo_full_name: str, default_branch: str | None = None
+) -> list[dict]:
     """
     Search a GitHub repo for .munki.recipe and .munki.recipe.yaml files
     using the Git tree API (recursive).
     """
     recipes: list[dict] = []
+    branch_found = default_branch or "main"
+
     async with AsyncClient(timeout=60) as client:
-        # Get the default branch SHA
-        resp = await client.get(
-            f"{GITHUB_API}/repos/{repo_full_name}/git/refs/heads/main",
-            headers=_github_headers(),
-        )
-        if resp.status_code == 404:
+        if default_branch:
             resp = await client.get(
-                f"{GITHUB_API}/repos/{repo_full_name}/git/refs/heads/master",
+                f"{GITHUB_API}/repos/{repo_full_name}/git/refs/heads/{default_branch}",
                 headers=_github_headers(),
             )
+        else:
+            resp = await client.get(
+                f"{GITHUB_API}/repos/{repo_full_name}/git/refs/heads/main",
+                headers=_github_headers(),
+            )
+            if resp.status_code == 404:
+                resp = await client.get(
+                    f"{GITHUB_API}/repos/{repo_full_name}/git/refs/heads/master",
+                    headers=_github_headers(),
+                )
+                if resp.status_code == 200:
+                    branch_found = "master"
+
         if resp.status_code != 200:
             logger.warning(
                 "get_ref_failed", repo=repo_full_name, status=resp.status_code
@@ -160,7 +173,7 @@ async def discover_recipes_in_repo(repo_full_name: str) -> list[dict]:
                 "path": path,
                 "identifier_guess": identifier_guess,
                 "repo_full_name": repo_full_name,
-                "url": f"https://github.com/{repo_full_name}/blob/main/{path}",
+                "url": f"https://github.com/{repo_full_name}/blob/{branch_found}/{path}",
             }
         )
 
@@ -258,6 +271,7 @@ async def sync_repos_to_cache(session: AsyncSession) -> dict:
             repo.html_url = data["html_url"]
             repo.clone_url = data.get("url")
             repo.updated_at = data.get("updated_at")
+            repo.default_branch = data.get("default_branch", "main")
             updated += 1
         else:
             repo = GitHubRecipeRepo(
@@ -268,6 +282,7 @@ async def sync_repos_to_cache(session: AsyncSession) -> dict:
                 description=data.get("description"),
                 stars=data.get("stars", 0),
                 updated_at=data.get("updated_at"),
+                default_branch=data.get("default_branch", "main"),
             )
             session.add(repo)
             added += 1
@@ -294,7 +309,9 @@ async def sync_repo_recipes_to_cache(
     Fetch all .munki.recipe files from a single GitHub repo and cache them locally.
     Returns the number of recipes cached.
     """
-    remote_recipes = await discover_recipes_in_repo(repo.full_name)
+    remote_recipes = await discover_recipes_in_repo(
+        repo.full_name, default_branch=repo.default_branch
+    )
 
     await session.execute(delete(GitHubRecipe).where(GitHubRecipe.repo_id == repo.id))
 

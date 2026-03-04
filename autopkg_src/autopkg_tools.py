@@ -24,7 +24,6 @@ import subprocess
 import sys
 import time
 from argparse import ArgumentParser
-from datetime import datetime
 from pathlib import Path
 
 import git
@@ -205,55 +204,95 @@ def report_to_api(recipe, status, start_time, error_message=None):
         logging.warning(f"Failed to report to API: {exc}")
 
 
+def check_trust_status(recipe):
+    """Check the recipe's trust status from the AutoMunki API."""
+    if not API_URL:
+        logging.info("No API_URL configured, falling back to local trust verification")
+        return None
+
+    identifier = recipe.plist.get("Identifier", f"local.munki.{recipe.name}")
+    try:
+        url = f"{API_URL}/api/v1/autopkg/recipes/trust-status?status=verified"
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            verified_recipes = response.json()
+            verified_identifiers = {r["identifier"] for r in verified_recipes}
+            if identifier in verified_identifiers:
+                logging.info(f"Trust verified via API for {recipe.name}")
+                return "verified"
+            else:
+                logging.info(f"Trust NOT verified via API for {recipe.name}")
+                return "not_verified"
+        else:
+            logging.warning(
+                f"Trust status API returned {response.status_code}, "
+                "falling back to local verification"
+            )
+            return None
+    except Exception as exc:
+        logging.warning(f"Failed to check trust status from API: {exc}")
+        return None
+
+
 def handle_recipe(recipe):
     logging.info(f"Handling {recipe.name}")
-    repo = os.environ.get("GITHUB_REPOSITORY", None)
     munki_repo = git.Repo(os.getenv("GITHUB_WORKSPACE", "./"))
     start_time = time.time()
-    recipe.verify_trust_info()
-    if recipe.verified:
-        recipe.run()
-        if recipe.results["imported"]:
-            file_changes = []
-            for item in recipe.results["imported"]:
-                pkg_info_path = os.path.join("pkgsinfo", item["pkginfo_path"])
-                logging.info(f"Adding {pkg_info_path} to commit")
-                file_changes.append(pkg_info_path)
-            worktree_commit(
-                munki_repo,
-                recipe.branch,
-                file_changes,
-                f"'Updated { recipe.name } to { recipe.updated_version }'",
-            )
 
-            title = f"feat: Update { recipe.name } to { recipe.updated_version }"
-            body = f"Updated { recipe.name } to { recipe.updated_version }"
-            create_pull_request(munki_repo, title, body, recipe.branch)
-            report_to_api(recipe, "imported", start_time)
-        elif recipe.error or recipe.results.get("failed"):
-            error_msg = ""
-            if recipe.results.get("failed") and isinstance(
-                recipe.results["failed"], list
-            ):
-                error_msg = "; ".join(
-                    f.get("message", "") for f in recipe.results["failed"]
-                )
-            report_to_api(recipe, "failed", start_time, error_message=error_msg)
-        else:
-            report_to_api(recipe, "no_change", start_time)
-    else:
-        logging.info(f"Updating trust for {recipe.name}")
-        recipe.update_trust_info()
-        branch_name = (
-            f"update_trust-{recipe.name}-{datetime.now().strftime('%Y-%m-%d')}"
+    trust_status = check_trust_status(recipe)
+
+    if trust_status == "not_verified":
+        logging.info(
+            f"Skipping {recipe.name}: trust not verified in webapp. "
+            "Approve trust changes in AutoMunki before running."
         )
-        worktree_commit(
-            munki_repo, branch_name, [recipe.path], f"Update trust for {recipe.name}"
-        )
-        title = f"feat: Update trust for { recipe.name }"
-        body = recipe.results["message"]
-        create_pull_request(munki_repo, title, body, branch_name)
+        recipe.results[
+            "message"
+        ] = "Trust not verified. Approve trust changes in AutoMunki webapp."
         report_to_api(recipe, "trust_failed", start_time)
+        slack_payload = slack_recipe_block(recipe, MUNKI_WEBSITE)
+        if slack_payload:
+            slack_alert(slack_payload, SLACK_WEBHOOK)
+        return recipe
+
+    if trust_status is None:
+        recipe.verify_trust_info()
+        if not recipe.verified:
+            logging.info(f"Local trust verification failed for {recipe.name}")
+            report_to_api(recipe, "trust_failed", start_time)
+            slack_payload = slack_recipe_block(recipe, MUNKI_WEBSITE)
+            if slack_payload:
+                slack_alert(slack_payload, SLACK_WEBHOOK)
+            return recipe
+
+    recipe.run()
+    if recipe.results["imported"]:
+        file_changes = []
+        for item in recipe.results["imported"]:
+            pkg_info_path = os.path.join("pkgsinfo", item["pkginfo_path"])
+            logging.info(f"Adding {pkg_info_path} to commit")
+            file_changes.append(pkg_info_path)
+        worktree_commit(
+            munki_repo,
+            recipe.branch,
+            file_changes,
+            f"'Updated { recipe.name } to { recipe.updated_version }'",
+        )
+
+        title = f"feat: Update { recipe.name } to { recipe.updated_version }"
+        body = f"Updated { recipe.name } to { recipe.updated_version }"
+        create_pull_request(munki_repo, title, body, recipe.branch)
+        report_to_api(recipe, "imported", start_time)
+    elif recipe.error or recipe.results.get("failed"):
+        error_msg = ""
+        if recipe.results.get("failed") and isinstance(recipe.results["failed"], list):
+            error_msg = "; ".join(
+                f.get("message", "") for f in recipe.results["failed"]
+            )
+        report_to_api(recipe, "failed", start_time, error_message=error_msg)
+    else:
+        report_to_api(recipe, "no_change", start_time)
+
     slack_payload = slack_recipe_block(recipe, MUNKI_WEBSITE)
     if slack_payload:
         slack_alert(slack_payload, SLACK_WEBHOOK)
