@@ -25,7 +25,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          token: ${{ steps.create_token.outputs.token }}
           fetch-depth: 0
 
       - name: Setup metadata cache
