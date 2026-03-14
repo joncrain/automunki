@@ -34,7 +34,7 @@ async def dispatch_autopkg_workflow(
     if not settings.github_token or not settings.github_repo:
         return {"error": "GitHub token or repo not configured"}
 
-    url = f"{GITHUB_API}/repos/{settings.github_repo}/actions/workflows/autopkg.yml/dispatches"
+    url = f"{GITHUB_API}/repos/{settings.github_repo}/actions/workflows/autopkg_cloud_runner.yml/dispatches"
 
     inputs: dict[str, str] = {"run_id": run_id, "api_url": settings.cors_origins[0]}
     if recipe_names:
