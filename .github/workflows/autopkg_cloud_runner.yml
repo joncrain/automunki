@@ -23,12 +23,12 @@ jobs:
       AUTOPKG_VERSION: 2.7.6
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup metadata cache
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: metadata_cache.json
           key: autopkg-cache-${{ github.run_id }}
@@ -62,21 +62,91 @@ jobs:
           defaults write com.github.autopkg RECIPE_REPO_DIR "${GITHUB_WORKSPACE}/autopkg_src/repos/"
           defaults write com.github.autopkg FAIL_RECIPES_WITHOUT_TRUST_INFO -bool TRUE
           defaults write com.github.autopkg MUNKI_REPO "${GITHUB_WORKSPACE}"
-          defaults write com.github.autopkg GITHUB_TOKEN "${{ steps.create_token.outputs.token }}"
+          defaults write com.github.autopkg GITHUB_TOKEN "${{ secrets.GITHUB_TOKEN }}"
           mkdir -p ./pkgs/
+          mkdir -p "${GITHUB_WORKSPACE}/autopkg_src/overrides/"
           mkdir -p /Users/runner/Library/AutoPkg/
           ln -sf "${GITHUB_WORKSPACE}/autopkg_src/Recipes" /Users/runner/Library/AutoPkg/
 
+      - name: Fetch run config from API
+        id: run_config
+        if: github.event.inputs.api_url != ''
+        env:
+          API_URL: ${{ github.event.inputs.api_url }}
+          RECIPE_INPUT: ${{ github.event.inputs.recipe }}
+        run: |
+          API_BASE="${API_URL}/api/v1/autopkg"
+          QUERY_PARAMS=""
+          if [ -n "$RECIPE_INPUT" ]; then
+            QUERY_PARAMS="?recipes=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$RECIPE_INPUT'))")"
+          fi
+
+          echo "Fetching run config from ${API_BASE}/runs/config${QUERY_PARAMS}"
+          curl -sf "${API_BASE}/runs/config${QUERY_PARAMS}" -o run_config.json
+
+          echo "Run config:"
+          cat run_config.json | python3 -m json.tool
+
+          echo "has_config=true" >> "$GITHUB_OUTPUT"
+
+      - name: Write override files and repo list from API config
+        if: steps.run_config.outputs.has_config == 'true'
+        run: |
+          python3 << 'PYEOF'
+          import json
+          import os
+          import plistlib
+
+          with open("run_config.json") as f:
+              config = json.load(f)
+
+          override_dir = os.path.join(os.environ["GITHUB_WORKSPACE"], "autopkg_src", "overrides")
+          os.makedirs(override_dir, exist_ok=True)
+
+          recipe_names = []
+          for override in config.get("overrides", []):
+              name = override["name"]
+              plist_data = override.get("plist", {})
+              filename = f"{name}.munki.recipe"
+              filepath = os.path.join(override_dir, filename)
+
+              with open(filepath, "wb") as f:
+                  plistlib.dump(plist_data, f)
+              print(f"Wrote override: {filepath}")
+              recipe_names.append(filename)
+
+          with open("run_recipe_list.json", "w") as f:
+              json.dump(recipe_names, f)
+          print(f"Recipe list: {recipe_names}")
+
+          repos = config.get("repos", [])
+          with open("autopkg_src/run_repo_list.txt", "w") as f:
+              for repo in repos:
+                  f.write(repo + "\n")
+          print(f"Repo list ({len(repos)} repos): {repos}")
+          PYEOF
+
       - name: Add AutoPkg repos
         run: |
-          cat ./autopkg_src/repo_list.txt | xargs -L1 autopkg repo-add
+          if [ -f "autopkg_src/run_repo_list.txt" ]; then
+            REPO_FILE="autopkg_src/run_repo_list.txt"
+          else
+            REPO_FILE="autopkg_src/repo_list.txt"
+          fi
+          echo "Using repo list: $REPO_FILE"
+          cat "$REPO_FILE" | xargs -L1 autopkg repo-add
 
       - name: Generate recipe list
         id: recipe_list
         run: |
-          RECIPE_INPUT="${{ github.event.inputs.recipe }}"
-          if [ -n "$RECIPE_INPUT" ]; then
-            python3 -c "
+          if [ -f "run_recipe_list.json" ]; then
+            echo "path=run_recipe_list.json" >> "$GITHUB_OUTPUT"
+            echo "Using API-generated recipe list"
+            cat run_recipe_list.json
+          else
+            RECIPE_INPUT="${{ github.event.inputs.recipe }}"
+            if [ -n "$RECIPE_INPUT" ]; then
+              python3 -c "
           import json, sys
           raw = sys.argv[1]
           names = [n.strip() for n in raw.split(',') if n.strip()]
@@ -85,9 +155,10 @@ jobs:
               json.dump(recipes, f)
           print(f'Generated recipe list with {len(recipes)} recipes: {recipes}')
           " "$RECIPE_INPUT"
-            echo "path=run_recipe_list.json" >> "$GITHUB_OUTPUT"
-          else
-            echo "path=autopkg_src/recipe_list.json" >> "$GITHUB_OUTPUT"
+              echo "path=run_recipe_list.json" >> "$GITHUB_OUTPUT"
+            else
+              echo "path=autopkg_src/recipe_list.json" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       - name: Run cloud-autopkg-runner
@@ -144,12 +215,26 @@ jobs:
           recipe_name = os.path.basename(report_path).replace(".plist", "")
           identifier = f"local.munki.{recipe_name}"
 
+          def post_result(payload):
+              data = json.dumps(payload).encode()
+              req = urllib.request.Request(
+                  f"{api_base}/runs/{run_id}/results",
+                  data=data,
+                  headers={"Content-Type": "application/json"},
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      print(f"Reported {payload['status']}: {recipe_name} ({resp.status})")
+              except Exception as e:
+                  print(f"Failed to report {recipe_name}: {e}")
+
           if imported_items:
               for item in imported_items:
                   catalogs = item.get("catalogs", "")
                   if isinstance(catalogs, str):
                       catalogs = [c.strip() for c in catalogs.split(",") if c.strip()]
-                  payload = {
+                  post_result({
                       "recipe_identifier": identifier,
                       "recipe_name": recipe_name,
                       "status": "imported",
@@ -157,59 +242,23 @@ jobs:
                       "imported_pkg_path": item.get("pkg_repo_path"),
                       "imported_pkginfo_path": item.get("pkginfo_path"),
                       "imported_catalogs": catalogs,
-                  }
-                  data = json.dumps(payload).encode()
-                  req = urllib.request.Request(
-                      f"{api_base}/runs/{run_id}/results",
-                      data=data,
-                      headers={"Content-Type": "application/json"},
-                      method="POST",
-                  )
-                  try:
-                      with urllib.request.urlopen(req, timeout=30) as resp:
-                          print(f"Reported imported: {recipe_name} ({resp.status})")
-                  except Exception as e:
-                      print(f"Failed to report {recipe_name}: {e}")
-
+                  })
           elif failures:
-              error_msg = "; ".join(f.get("message", "") for f in failures if isinstance(f, dict))
-              payload = {
+              error_msg = "; ".join(
+                  f.get("message", "") for f in failures if isinstance(f, dict)
+              )
+              post_result({
                   "recipe_identifier": identifier,
                   "recipe_name": recipe_name,
                   "status": "failed",
                   "error_message": error_msg,
-              }
-              data = json.dumps(payload).encode()
-              req = urllib.request.Request(
-                  f"{api_base}/runs/{run_id}/results",
-                  data=data,
-                  headers={"Content-Type": "application/json"},
-                  method="POST",
-              )
-              try:
-                  with urllib.request.urlopen(req, timeout=30) as resp:
-                      print(f"Reported failed: {recipe_name} ({resp.status})")
-              except Exception as e:
-                  print(f"Failed to report {recipe_name}: {e}")
-
+              })
           else:
-              payload = {
+              post_result({
                   "recipe_identifier": identifier,
                   "recipe_name": recipe_name,
                   "status": "no_change",
-              }
-              data = json.dumps(payload).encode()
-              req = urllib.request.Request(
-                  f"{api_base}/runs/{run_id}/results",
-                  data=data,
-                  headers={"Content-Type": "application/json"},
-                  method="POST",
-              )
-              try:
-                  with urllib.request.urlopen(req, timeout=30) as resp:
-                      print(f"Reported no_change: {recipe_name} ({resp.status})")
-              except Exception as e:
-                  print(f"Failed to report {recipe_name}: {e}")
+              })
           PYEOF
           done
 

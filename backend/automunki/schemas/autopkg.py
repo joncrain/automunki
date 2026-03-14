@@ -58,6 +58,7 @@ class AutoPkgRecipeUpdate(BaseModel):
 class AutoPkgRecipeRead(AutoPkgRecipeBase):
     id: UUID
     repo_id: UUID | None = None
+    github_repo: str | None = None
     override_data: dict | None = None
     trust_info: dict | None = None
     input_variables: dict | None = None

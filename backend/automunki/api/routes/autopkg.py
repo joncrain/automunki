@@ -225,6 +225,77 @@ async def complete_run(
     return {"message": "Run completed", "run_id": str(run_id)}
 
 
+@router.get("/runs/config")
+async def get_run_config(
+    session: AsyncSession = Depends(get_session),
+    recipes: str = Query(
+        None, description="Comma-separated recipe names to include"
+    ),
+):
+    """
+    Return the configuration needed by the GitHub Actions runner:
+    override plist dicts and the set of repos to autopkg repo-add.
+
+    If `recipes` is provided, only those recipes are included.
+    Otherwise all enabled overrides are returned.
+    """
+    query = select(AutoPkgRecipe).where(
+        AutoPkgRecipe.is_override.is_(True),
+        AutoPkgRecipe.is_enabled.is_(True),
+    )
+    result = await session.execute(query)
+    all_recipes = result.scalars().all()
+
+    if recipes:
+        names = {n.strip() for n in recipes.split(",") if n.strip()}
+        all_recipes = [r for r in all_recipes if r.name in names]
+
+    overrides: list[dict] = []
+    repos: set[str] = set()
+
+    for recipe in all_recipes:
+        override_entry: dict = {
+            "name": recipe.name,
+            "identifier": recipe.identifier,
+        }
+        if recipe.override_data:
+            override_entry["plist"] = recipe.override_data
+        else:
+            override_entry["plist"] = {
+                "Identifier": recipe.identifier,
+                "ParentRecipe": recipe.parent_recipe or "",
+                "Input": recipe.input_variables or {},
+            }
+            if recipe.trust_info:
+                plist_trust: dict = {}
+                for section in ("parent_recipes", "non_core_processors"):
+                    entries = recipe.trust_info.get(section, {})
+                    if entries:
+                        plist_trust[section] = {
+                            k: {
+                                "git_hash": "",
+                                "sha256_hash": v.get("sha256_hash", ""),
+                            }
+                            for k, v in entries.items()
+                        }
+                if plist_trust:
+                    override_entry["plist"]["ParentRecipeTrustInfo"] = plist_trust
+
+        overrides.append(override_entry)
+
+        inferred = infer_repos_from_trust_info(recipe.trust_info)
+        repos.update(inferred)
+
+    repo_urls = [f"https://github.com/{r}.git" for r in sorted(repos)]
+
+    return {
+        "overrides": overrides,
+        "repos": repo_urls,
+        "total_overrides": len(overrides),
+        "total_repos": len(repo_urls),
+    }
+
+
 @router.get("/recipes", response_model=list[AutoPkgRecipeRead])
 async def list_recipes(
     session: AsyncSession = Depends(get_session),
@@ -823,12 +894,36 @@ async def add_recipe_override(
             detail="GitHub API rate limit exceeded while building override. Please try again later.",
         )
 
+    trust_info = override_info.get("trust_info", {})
+    input_variables = override_info.get("input_variables", {})
+
+    override_plist = {
+        "Identifier": override_info["identifier"],
+        "ParentRecipe": override_info["parent_recipe"],
+        "Input": input_variables or {},
+    }
+    plist_trust = {}
+    if trust_info.get("parent_recipes"):
+        plist_trust["parent_recipes"] = {
+            k: {"git_hash": "", "sha256_hash": v.get("sha256_hash", "")}
+            for k, v in trust_info["parent_recipes"].items()
+        }
+    if trust_info.get("non_core_processors"):
+        plist_trust["non_core_processors"] = {
+            k: {"git_hash": "", "sha256_hash": v.get("sha256_hash", "")}
+            for k, v in trust_info["non_core_processors"].items()
+        }
+    if plist_trust:
+        override_plist["ParentRecipeTrustInfo"] = plist_trust
+
     payload = {
         "identifier": override_info["identifier"],
         "name": data.name,
         "parent_recipe": override_info["parent_recipe"],
-        "input_variables": override_info.get("input_variables"),
-        "trust_info": override_info.get("trust_info"),
+        "input_variables": input_variables,
+        "trust_info": trust_info,
+        "override_data": override_plist,
+        "github_repo": data.github_repo,
         "is_override": True,
         "is_enabled": data.is_enabled,
         "auto_promote": data.auto_promote,

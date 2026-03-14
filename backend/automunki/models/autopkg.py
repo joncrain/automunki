@@ -126,6 +126,7 @@ class AutoPkgRecipe(UUIDMixin, Base):
         ForeignKey("autopkg_repo.id", ondelete="SET NULL"),
         index=True,
     )
+    github_repo: Mapped[str | None] = mapped_column(Text)
 
     override_data: Mapped[dict | None] = mapped_column(JSONB)
     trust_info: Mapped[dict | None] = mapped_column(JSONB)
