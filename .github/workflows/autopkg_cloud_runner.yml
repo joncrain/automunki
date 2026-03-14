@@ -22,20 +22,14 @@ jobs:
       MUNKI_EXPLICIT_VERSION: 6.7.0.4731
       AUTOPKG_VERSION: 2.7.6
     steps:
-      - id: create_token
-        uses: tibdex/github-app-token@v2
-        with:
-          app_id: ${{ secrets.APP_ID }}
-          private_key: ${{ secrets.PRIVATE_KEY }}
-
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           token: ${{ steps.create_token.outputs.token }}
           fetch-depth: 0
 
       - name: Setup metadata cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: metadata_cache.json
           key: autopkg-cache-${{ github.run_id }}
