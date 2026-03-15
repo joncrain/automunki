@@ -14,7 +14,7 @@ on:
         required: false
 
 env:
-  API_URL: "https://f95c-107-181-205-9.ngrok-free.app"
+  BACKEND_URL: "https://f95c-107-181-205-9.ngrok-free.app"
 
 jobs:
   autopkg-run:
@@ -76,7 +76,7 @@ jobs:
           API_URL: ${{ github.event.inputs.api_url }}
           RECIPE_INPUT: ${{ github.event.inputs.recipe }}
         run: |
-          API_BASE="${API_URL}/api/v1/autopkg"
+          API_BASE="${BACKEND_URL}/api/v1/autopkg"
           QUERY_PARAMS=""
           if [ -n "$RECIPE_INPUT" ]; then
             QUERY_PARAMS="?recipes=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$RECIPE_INPUT'))")"
@@ -148,7 +148,7 @@ jobs:
           RUN_ID: ${{ github.event.inputs.run_id }}
         run: |
           REPORT_DIR="AutoPkg/Reports"
-          API_BASE="${API_URL}/api/v1/autopkg"
+          API_BASE="${BACKEND_URL}/api/v1/autopkg"
 
           if [ ! -d "$REPORT_DIR" ] || [ -z "$(ls -A "$REPORT_DIR" 2>/dev/null)" ]; then
             echo "No report files found, marking run complete"
