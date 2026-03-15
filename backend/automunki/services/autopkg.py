@@ -16,7 +16,6 @@ from automunki.models.autopkg import GitHubRecipe, GitHubRecipeRepo
 logger = structlog.get_logger()
 
 GITHUB_API = "https://api.github.com"
-LOCAL_SITE = "https://ffdb-107-181-205-9.ngrok-free.app"
 
 
 def _github_headers() -> dict[str, str]:
@@ -37,11 +36,10 @@ async def dispatch_autopkg_workflow(
     # specify the db-mode branch
     url = f"{GITHUB_API}/repos/{settings.github_repo}/actions/workflows/autopkg_cloud_runner.yml/dispatches"
 
-    inputs: dict[str, str] = {"run_id": run_id, "api_url": LOCAL_SITE}
+    api_url = settings.api_public_url or settings.cors_origins[0]
+    inputs: dict[str, str] = {"run_id": run_id, "api_url": api_url}
     if recipe_names:
         inputs["recipe"] = ", ".join(recipe_names)
-
-    
 
     async with AsyncClient(timeout=30) as client:
         response = await client.post(

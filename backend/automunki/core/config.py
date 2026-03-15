@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     aws_s3_bucket: str = ""
     cloudfront_distribution_id: str = ""
 
+    api_public_url: str = ""
+
     slack_webhook_url: str = ""
 
     cors_origins: list[str] = ["http://localhost:3000"]

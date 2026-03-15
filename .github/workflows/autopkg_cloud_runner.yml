@@ -13,22 +13,25 @@ on:
         description: AutoMunki API URL
         required: false
 
+env:
+  API_URL: "https://f95c-107-181-205-9.ngrok-free.app"
+
 jobs:
   autopkg-run:
     runs-on: macos-latest
-    timeout-minutes: 150
+    timeout-minutes: 20
     env:
       MUNKI_VERSION: 6.7.0
       MUNKI_EXPLICIT_VERSION: 6.7.0.4731
       AUTOPKG_VERSION: 2.7.6
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup metadata cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: metadata_cache.json
           key: autopkg-cache-${{ github.run_id }}
@@ -58,15 +61,13 @@ jobs:
       - name: Configure AutoPkg
         run: |
           defaults write com.github.autopkg CACHE_DIR "${GITHUB_WORKSPACE}/AutoPkg/Cache"
-          defaults write com.github.autopkg RECIPE_OVERRIDE_DIRS "${GITHUB_WORKSPACE}/autopkg_src/overrides/"
-          defaults write com.github.autopkg RECIPE_REPO_DIR "${GITHUB_WORKSPACE}/autopkg_src/repos/"
+          defaults write com.github.autopkg RECIPE_OVERRIDE_DIRS "${GITHUB_WORKSPACE}/AutoPkg/overrides/"
+          defaults write com.github.autopkg RECIPE_REPO_DIR "${GITHUB_WORKSPACE}/AutoPkg/repos/"
           defaults write com.github.autopkg FAIL_RECIPES_WITHOUT_TRUST_INFO -bool TRUE
           defaults write com.github.autopkg MUNKI_REPO "${GITHUB_WORKSPACE}"
           defaults write com.github.autopkg GITHUB_TOKEN "${{ secrets.GITHUB_TOKEN }}"
           mkdir -p ./pkgs/
-          mkdir -p "${GITHUB_WORKSPACE}/autopkg_src/overrides/"
           mkdir -p /Users/runner/Library/AutoPkg/
-          ln -sf "${GITHUB_WORKSPACE}/autopkg_src/Recipes" /Users/runner/Library/AutoPkg/
 
       - name: Fetch run config from API
         id: run_config
@@ -100,7 +101,7 @@ jobs:
           with open("run_config.json") as f:
               config = json.load(f)
 
-          override_dir = os.path.join(os.environ["GITHUB_WORKSPACE"], "autopkg_src", "overrides")
+          override_dir = os.path.join(os.environ["GITHUB_WORKSPACE"], "AutoPkg", "Overrides")
           os.makedirs(override_dir, exist_ok=True)
 
           recipe_names = []
@@ -115,12 +116,12 @@ jobs:
               print(f"Wrote override: {filepath}")
               recipe_names.append(filename)
 
-          with open("run_recipe_list.json", "w") as f:
+          with open("AutoPkg/run_recipe_list.json", "w") as f:
               json.dump(recipe_names, f)
           print(f"Recipe list: {recipe_names}")
 
           repos = config.get("repos", [])
-          with open("autopkg_src/run_repo_list.txt", "w") as f:
+          with open("AutoPkg/run_repo_list.txt", "w") as f:
               for repo in repos:
                   f.write(repo + "\n")
           print(f"Repo list ({len(repos)} repos): {repos}")
@@ -128,38 +129,8 @@ jobs:
 
       - name: Add AutoPkg repos
         run: |
-          if [ -f "autopkg_src/run_repo_list.txt" ]; then
-            REPO_FILE="autopkg_src/run_repo_list.txt"
-          else
-            REPO_FILE="autopkg_src/repo_list.txt"
-          fi
-          echo "Using repo list: $REPO_FILE"
+          REPO_FILE="AutoPkg/run_repo_list.txt"
           cat "$REPO_FILE" | xargs -L1 autopkg repo-add
-
-      - name: Generate recipe list
-        id: recipe_list
-        run: |
-          if [ -f "run_recipe_list.json" ]; then
-            echo "path=run_recipe_list.json" >> "$GITHUB_OUTPUT"
-            echo "Using API-generated recipe list"
-            cat run_recipe_list.json
-          else
-            RECIPE_INPUT="${{ github.event.inputs.recipe }}"
-            if [ -n "$RECIPE_INPUT" ]; then
-              python3 -c "
-          import json, sys
-          raw = sys.argv[1]
-          names = [n.strip() for n in raw.split(',') if n.strip()]
-          recipes = [n if n.endswith('.recipe') else n + '.munki.recipe' for n in names]
-          with open('run_recipe_list.json', 'w') as f:
-              json.dump(recipes, f)
-          print(f'Generated recipe list with {len(recipes)} recipes: {recipes}')
-          " "$RECIPE_INPUT"
-              echo "path=run_recipe_list.json" >> "$GITHUB_OUTPUT"
-            else
-              echo "path=autopkg_src/recipe_list.json" >> "$GITHUB_OUTPUT"
-            fi
-          fi
 
       - name: Run cloud-autopkg-runner
         run: |

@@ -11,6 +11,7 @@ from automunki.core.security import current_optional_user
 from automunki.models.autopkg import (
     ApprovalStatus,
     AutoPkgRecipe,
+    AutoPkgRepo,
     AutoPkgRun,
     AutoPkgRunResult,
     GitHubRecipe,
@@ -126,6 +127,88 @@ async def list_runs(
     )
 
 
+@router.get("/runs/config")
+async def get_run_config(
+    session: AsyncSession = Depends(get_session),
+    recipes: str = Query(
+        None, description="Comma-separated recipe names to include"
+    ),
+):
+    """
+    Return the configuration needed by the GitHub Actions runner:
+    override plist dicts and the set of repos to autopkg repo-add.
+
+    If `recipes` is provided, only those recipes are included.
+    Otherwise all enabled overrides are returned.
+    """
+    query = select(AutoPkgRecipe).where(
+        AutoPkgRecipe.is_override.is_(True),
+        AutoPkgRecipe.is_enabled.is_(True),
+    )
+    result = await session.execute(query)
+    all_recipes = result.scalars().all()
+
+    if recipes:
+        names = {n.strip() for n in recipes.split(",") if n.strip()}
+        all_recipes = [r for r in all_recipes if r.name in names]
+
+    overrides: list[dict] = []
+    repo_urls: set[str] = set()
+
+    for recipe in all_recipes:
+        override_entry: dict = {
+            "name": recipe.name,
+            "identifier": recipe.identifier,
+        }
+        if recipe.override_data:
+            plist = dict(recipe.override_data)
+            trust = plist.get("ParentRecipeTrustInfo", {})
+            trust.setdefault("parent_recipes", {})
+            trust.setdefault("non_core_processors", {})
+            if trust:
+                plist["ParentRecipeTrustInfo"] = trust
+            override_entry["plist"] = plist
+        else:
+            override_entry["plist"] = {
+                "Identifier": recipe.identifier,
+                "ParentRecipe": recipe.parent_recipe or "",
+                "Input": recipe.input_variables or {},
+            }
+            if recipe.trust_info:
+                plist_trust: dict = {
+                    "parent_recipes": {},
+                    "non_core_processors": {},
+                }
+                for section in ("parent_recipes", "non_core_processors"):
+                    entries = recipe.trust_info.get(section, {})
+                    if entries:
+                        plist_trust[section] = {
+                            k: {
+                                "git_hash": "",
+                                "sha256_hash": v.get("sha256_hash", ""),
+                            }
+                            for k, v in entries.items()
+                        }
+                override_entry["plist"]["ParentRecipeTrustInfo"] = plist_trust
+
+        overrides.append(override_entry)
+
+        if recipe.repo:
+            repo_urls.add(recipe.repo.url)
+        else:
+            inferred = infer_repos_from_trust_info(recipe.trust_info)
+            repo_urls.update(
+                f"https://github.com/{r}.git" for r in inferred
+            )
+
+    return {
+        "overrides": overrides,
+        "repos": sorted(repo_urls),
+        "total_overrides": len(overrides),
+        "total_repos": len(repo_urls),
+    }
+
+
 @router.get("/runs/{run_id}", response_model=AutoPkgRunRead)
 async def get_run(
     run_id: uuid.UUID,
@@ -225,77 +308,6 @@ async def complete_run(
     return {"message": "Run completed", "run_id": str(run_id)}
 
 
-@router.get("/runs/config")
-async def get_run_config(
-    session: AsyncSession = Depends(get_session),
-    recipes: str = Query(
-        None, description="Comma-separated recipe names to include"
-    ),
-):
-    """
-    Return the configuration needed by the GitHub Actions runner:
-    override plist dicts and the set of repos to autopkg repo-add.
-
-    If `recipes` is provided, only those recipes are included.
-    Otherwise all enabled overrides are returned.
-    """
-    query = select(AutoPkgRecipe).where(
-        AutoPkgRecipe.is_override.is_(True),
-        AutoPkgRecipe.is_enabled.is_(True),
-    )
-    result = await session.execute(query)
-    all_recipes = result.scalars().all()
-
-    if recipes:
-        names = {n.strip() for n in recipes.split(",") if n.strip()}
-        all_recipes = [r for r in all_recipes if r.name in names]
-
-    overrides: list[dict] = []
-    repos: set[str] = set()
-
-    for recipe in all_recipes:
-        override_entry: dict = {
-            "name": recipe.name,
-            "identifier": recipe.identifier,
-        }
-        if recipe.override_data:
-            override_entry["plist"] = recipe.override_data
-        else:
-            override_entry["plist"] = {
-                "Identifier": recipe.identifier,
-                "ParentRecipe": recipe.parent_recipe or "",
-                "Input": recipe.input_variables or {},
-            }
-            if recipe.trust_info:
-                plist_trust: dict = {}
-                for section in ("parent_recipes", "non_core_processors"):
-                    entries = recipe.trust_info.get(section, {})
-                    if entries:
-                        plist_trust[section] = {
-                            k: {
-                                "git_hash": "",
-                                "sha256_hash": v.get("sha256_hash", ""),
-                            }
-                            for k, v in entries.items()
-                        }
-                if plist_trust:
-                    override_entry["plist"]["ParentRecipeTrustInfo"] = plist_trust
-
-        overrides.append(override_entry)
-
-        inferred = infer_repos_from_trust_info(recipe.trust_info)
-        repos.update(inferred)
-
-    repo_urls = [f"https://github.com/{r}.git" for r in sorted(repos)]
-
-    return {
-        "overrides": overrides,
-        "repos": repo_urls,
-        "total_overrides": len(overrides),
-        "total_repos": len(repo_urls),
-    }
-
-
 @router.get("/recipes", response_model=list[AutoPkgRecipeRead])
 async def list_recipes(
     session: AsyncSession = Depends(get_session),
@@ -320,7 +332,9 @@ async def create_recipe(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Recipe already exists")
 
-    recipe = AutoPkgRecipe(**data.model_dump())
+    recipe = AutoPkgRecipe(
+        **data.model_dump(exclude={"github_repo", "recipe_path"})
+    )
     session.add(recipe)
 
     await create_audit_entry(
@@ -902,7 +916,10 @@ async def add_recipe_override(
         "ParentRecipe": override_info["parent_recipe"],
         "Input": input_variables or {},
     }
-    plist_trust = {}
+    plist_trust: dict = {
+        "parent_recipes": {},
+        "non_core_processors": {},
+    }
     if trust_info.get("parent_recipes"):
         plist_trust["parent_recipes"] = {
             k: {"git_hash": "", "sha256_hash": v.get("sha256_hash", "")}
@@ -913,8 +930,20 @@ async def add_recipe_override(
             k: {"git_hash": "", "sha256_hash": v.get("sha256_hash", "")}
             for k, v in trust_info["non_core_processors"].items()
         }
-    if plist_trust:
-        override_plist["ParentRecipeTrustInfo"] = plist_trust
+    override_plist["ParentRecipeTrustInfo"] = plist_trust
+
+    clone_url = f"https://github.com/{data.github_repo}.git"
+    result = await session.execute(
+        select(AutoPkgRepo).where(AutoPkgRepo.url == clone_url)
+    )
+    repo = result.scalar_one_or_none()
+    if not repo:
+        repo = AutoPkgRepo(
+            url=clone_url,
+            name=data.github_repo,
+        )
+        session.add(repo)
+        await session.flush()
 
     payload = {
         "identifier": override_info["identifier"],
@@ -923,7 +952,7 @@ async def add_recipe_override(
         "input_variables": input_variables,
         "trust_info": trust_info,
         "override_data": override_plist,
-        "github_repo": data.github_repo,
+        "repo_id": repo.id,
         "is_override": True,
         "is_enabled": data.is_enabled,
         "auto_promote": data.auto_promote,
@@ -940,6 +969,7 @@ async def add_recipe_override(
     recipe = AutoPkgRecipe(**payload)
     session.add(recipe)
 
+    audit_snapshot = {**payload, "repo_id": str(payload["repo_id"])}
     await create_audit_entry(
         session,
         action="create_override",
@@ -948,7 +978,7 @@ async def add_recipe_override(
         entity_name=recipe.name,
         user_id=user.id if user else None,
         user_email=user.email if user else None,
-        after_snapshot=payload,
+        after_snapshot=audit_snapshot,
     )
 
     await session.commit()
@@ -964,22 +994,25 @@ async def list_inferred_repos(
     session: AsyncSession = Depends(get_session),
 ):
     """
-    Return the set of GitHub repos needed for autopkg runs, inferred
-    from the trust_info of all enabled override recipes.
+    Return the set of GitHub repos needed for autopkg runs.
+    Uses the repo relationship on each recipe as the primary source,
+    falling back to inference from trust_info for legacy recipes.
     """
     result = await session.execute(
         select(AutoPkgRecipe).where(
             AutoPkgRecipe.is_override.is_(True),
             AutoPkgRecipe.is_enabled.is_(True),
-            AutoPkgRecipe.trust_info.isnot(None),
         )
     )
     recipes = result.scalars().all()
 
     all_repos: set[str] = set()
     for recipe in recipes:
-        repos = infer_repos_from_trust_info(recipe.trust_info)
-        all_repos.update(repos)
+        if recipe.repo:
+            all_repos.add(recipe.repo.name)
+        elif recipe.trust_info:
+            inferred = infer_repos_from_trust_info(recipe.trust_info)
+            all_repos.update(inferred)
 
     return {
         "repos": sorted(all_repos),
