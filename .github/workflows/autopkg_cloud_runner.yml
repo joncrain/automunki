@@ -134,7 +134,7 @@ jobs:
 
       - name: Run cloud-autopkg-runner
         run: |
-          uvx 'cloud-autopkg-runner[json]' -v \
+          uvx 'cloud-autopkg-runner' -v \
             --recipe-list "${{ steps.recipe_list.outputs.path }}" \
             --cache-file metadata_cache.json \
             --cache-plugin json \

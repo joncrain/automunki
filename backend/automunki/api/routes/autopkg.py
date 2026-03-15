@@ -141,9 +141,13 @@ async def get_run_config(
     If `recipes` is provided, only those recipes are included.
     Otherwise all enabled overrides are returned.
     """
-    query = select(AutoPkgRecipe).where(
-        AutoPkgRecipe.is_override.is_(True),
-        AutoPkgRecipe.is_enabled.is_(True),
+    query = (
+        select(AutoPkgRecipe)
+        .options(selectinload(AutoPkgRecipe.repo))
+        .where(
+            AutoPkgRecipe.is_override.is_(True),
+            AutoPkgRecipe.is_enabled.is_(True),
+        )
     )
     result = await session.execute(query)
     all_recipes = result.scalars().all()
@@ -999,7 +1003,9 @@ async def list_inferred_repos(
     falling back to inference from trust_info for legacy recipes.
     """
     result = await session.execute(
-        select(AutoPkgRecipe).where(
+        select(AutoPkgRecipe)
+        .options(selectinload(AutoPkgRecipe.repo))
+        .where(
             AutoPkgRecipe.is_override.is_(True),
             AutoPkgRecipe.is_enabled.is_(True),
         )
