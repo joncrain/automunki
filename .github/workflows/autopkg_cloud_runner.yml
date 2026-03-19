@@ -30,13 +30,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup metadata cache
-        uses: actions/cache@v5
-        with:
-          path: metadata_cache.json
-          key: autopkg-cache-${{ github.run_id }}
-          restore-keys: autopkg-cache-
-
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -69,11 +62,30 @@ jobs:
           mkdir -p ./pkgs/
           mkdir -p /Users/runner/Library/AutoPkg/
 
+      - name: Load metadata cache from API
+        run: |
+          API_BASE="${BACKEND_URL}/api/v1/autopkg"
+          echo "Fetching metadata cache from ${API_BASE}/metadata-cache"
+          HTTP_CODE=$(curl -s -o metadata_cache_response.json -w "%{http_code}" "${API_BASE}/metadata-cache")
+          if [ "$HTTP_CODE" = "200" ]; then
+            python3 -c "
+          import json, sys
+          with open('metadata_cache_response.json') as f:
+              resp = json.load(f)
+          cache = resp.get('cache_data', {})
+          with open('metadata_cache.json', 'w') as f:
+              json.dump(cache, f, indent=4)
+          print(f'Loaded metadata cache with {len(cache)} entries')
+          "
+          else
+            echo "No metadata cache found (HTTP ${HTTP_CODE}), starting fresh"
+            echo '{}' > metadata_cache.json
+          fi
+
       - name: Fetch run config from API
         id: run_config
         if: github.event.inputs.api_url != ''
         env:
-          API_URL: ${{ github.event.inputs.api_url }}
           RECIPE_INPUT: ${{ github.event.inputs.recipe }}
         run: |
           API_BASE="${BACKEND_URL}/api/v1/autopkg"
@@ -144,9 +156,6 @@ jobs:
           defaults read com.github.autopkg RECIPE_SEARCH_DIRS 2>/dev/null || echo "(not set)"
           echo "RECIPE_REPO_DIR:"
           defaults read com.github.autopkg RECIPE_REPO_DIR 2>/dev/null || echo "(not set)"
-          echo ""
-          echo "Plist file contents:"
-          cat ~/Library/Preferences/com.github.autopkg.plist 2>/dev/null | python3 -c "import sys,plistlib,json; print(json.dumps(plistlib.loads(sys.stdin.buffer.read()), indent=2, default=str))" || echo "(plist file not found or unreadable)"
 
       - name: Run cloud-autopkg-runner
         run: |
@@ -157,18 +166,50 @@ jobs:
             --log-file autopkg_runner.log \
             --report-dir AutoPkg/Reports/
 
-      - name: Report results to API
+      - name: Save metadata cache to API
+        if: always()
+        env:
+          API_BASE_URL: ${{ env.BACKEND_URL }}
+        run: |
+          if [ ! -f metadata_cache.json ]; then
+            echo "No metadata cache file found, skipping"
+            exit 0
+          fi
+          API_BASE="${API_BASE_URL}/api/v1/autopkg"
+          python3 << 'PYEOF'
+          import json, os, urllib.request
+
+          api_base = os.environ["API_BASE_URL"] + "/api/v1/autopkg"
+
+          with open("metadata_cache.json") as f:
+              cache = json.load(f)
+
+          payload = json.dumps({"cache_data": cache}).encode()
+          req = urllib.request.Request(
+              f"{api_base}/metadata-cache",
+              data=payload,
+              headers={"Content-Type": "application/json"},
+              method="PUT",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  print(f"Saved metadata cache ({resp.status})")
+          except Exception as e:
+              print(f"Failed to save metadata cache: {e}")
+          PYEOF
+
+      - name: Report results and ingest pkginfo
         if: always() && github.event.inputs.run_id != '' && github.event.inputs.api_url != ''
         env:
-          API_URL: ${{ github.event.inputs.api_url }}
+          API_BASE_URL: ${{ env.BACKEND_URL }}
           RUN_ID: ${{ github.event.inputs.run_id }}
         run: |
           REPORT_DIR="AutoPkg/Reports"
-          API_BASE="${BACKEND_URL}/api/v1/autopkg"
+          PKGSINFO_DIR="${GITHUB_WORKSPACE}/pkgsinfo"
 
           if [ ! -d "$REPORT_DIR" ] || [ -z "$(ls -A "$REPORT_DIR" 2>/dev/null)" ]; then
             echo "No report files found, marking run complete"
-            curl -sf -X POST "${API_BASE}/runs/${RUN_ID}/complete" \
+            curl -sf -X POST "${API_BASE_URL}/api/v1/autopkg/runs/${RUN_ID}/complete" \
               -H "Content-Type: application/json" -d '{}'
             exit 0
           fi
@@ -177,15 +218,16 @@ jobs:
             [ -f "$report" ] || continue
             echo "Processing report: $report"
 
-            REPORT_FILE="$report" python3 << 'PYEOF'
+            REPORT_FILE="$report" PKGSINFO_DIR="$PKGSINFO_DIR" python3 << 'PYEOF'
           import json
           import os
           import plistlib
           import urllib.request
 
-          api_base = os.environ["API_BASE"]
+          api_base = os.environ["API_BASE_URL"] + "/api/v1/autopkg"
           run_id = os.environ["RUN_ID"]
           report_path = os.environ.get("REPORT_FILE", "")
+          pkgsinfo_dir = os.environ.get("PKGSINFO_DIR", "")
 
           if not report_path or not os.path.exists(report_path):
               print(f"Report not found: {report_path}")
@@ -202,26 +244,29 @@ jobs:
           recipe_name = os.path.basename(report_path).replace(".plist", "")
           identifier = f"local.munki.{recipe_name}"
 
-          def post_result(payload):
+
+          def post_json(url, payload):
               data = json.dumps(payload).encode()
               req = urllib.request.Request(
-                  f"{api_base}/runs/{run_id}/results",
-                  data=data,
+                  url, data=data,
                   headers={"Content-Type": "application/json"},
                   method="POST",
               )
               try:
                   with urllib.request.urlopen(req, timeout=30) as resp:
-                      print(f"Reported {payload['status']}: {recipe_name} ({resp.status})")
+                      return json.loads(resp.read().decode()), resp.status
               except Exception as e:
-                  print(f"Failed to report {recipe_name}: {e}")
+                  print(f"  POST {url} failed: {e}")
+                  return None, 0
+
 
           if imported_items:
               for item in imported_items:
                   catalogs = item.get("catalogs", "")
                   if isinstance(catalogs, str):
                       catalogs = [c.strip() for c in catalogs.split(",") if c.strip()]
-                  post_result({
+
+                  result_payload = {
                       "recipe_identifier": identifier,
                       "recipe_name": recipe_name,
                       "status": "imported",
@@ -229,28 +274,60 @@ jobs:
                       "imported_pkg_path": item.get("pkg_repo_path"),
                       "imported_pkginfo_path": item.get("pkginfo_path"),
                       "imported_catalogs": catalogs,
-                  })
+                  }
+                  resp_body, status = post_json(
+                      f"{api_base}/runs/{run_id}/results", result_payload
+                  )
+                  print(f"  Reported imported: {item.get('name')} {item.get('version')} ({status})")
+
+                  pkginfo_path = item.get("pkginfo_path", "")
+                  if pkginfo_path and pkgsinfo_dir:
+                      full_path = os.path.join(pkgsinfo_dir, pkginfo_path)
+                      if os.path.exists(full_path):
+                          with open(full_path, "rb") as pf:
+                              pkginfo_dict = plistlib.load(pf)
+                          serializable = {}
+                          for k, v in pkginfo_dict.items():
+                              if isinstance(v, bytes):
+                                  serializable[k] = v.hex()
+                              else:
+                                  serializable[k] = v
+                          resp_body, status = post_json(
+                              f"{api_base}/pkginfo/ingest",
+                              {"pkginfo": serializable},
+                          )
+                          if resp_body and resp_body.get("skipped"):
+                              print(f"  Pkginfo already in DB: {item.get('name')} {item.get('version')}")
+                          elif status == 200:
+                              print(f"  Ingested pkginfo: {item.get('name')} {item.get('version')}")
+                          else:
+                              print(f"  Pkginfo ingest response: {resp_body}")
+                      else:
+                          print(f"  Pkginfo file not found at {full_path}")
+
           elif failures:
               error_msg = "; ".join(
                   f.get("message", "") for f in failures if isinstance(f, dict)
               )
-              post_result({
+              post_json(f"{api_base}/runs/{run_id}/results", {
                   "recipe_identifier": identifier,
                   "recipe_name": recipe_name,
                   "status": "failed",
                   "error_message": error_msg,
               })
+              print(f"  Reported failed: {recipe_name}")
           else:
-              post_result({
+              post_json(f"{api_base}/runs/{run_id}/results", {
                   "recipe_identifier": identifier,
                   "recipe_name": recipe_name,
                   "status": "no_change",
               })
+              print(f"  Reported no_change: {recipe_name}")
           PYEOF
           done
 
           echo "Marking run complete"
-          curl -sf -X POST "${API_BASE}/runs/${RUN_ID}/complete" \
+          curl -sf -X POST "${API_BASE_URL}/api/v1/autopkg/runs/${RUN_ID}/complete" \
             -H "Content-Type: application/json" -d '{}'
 
       # - name: Configure AWS credentials
