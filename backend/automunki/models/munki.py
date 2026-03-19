@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from automunki.models.base import Base, UUIDMixin
 
 
-class ItemType(str, enum.Enum):
+class ItemType(enum.StrEnum):
     managed_installs = "managed_installs"
     managed_uninstalls = "managed_uninstalls"
     managed_updates = "managed_updates"
@@ -27,14 +27,14 @@ class ItemType(str, enum.Enum):
     default_installs = "default_installs"
 
 
-class PromotionStrategy(str, enum.Enum):
+class PromotionStrategy(enum.StrEnum):
     manual = "manual"
     auto_time = "auto_time"
     auto_approve = "auto_approve"
     auto_immediate = "auto_immediate"
 
 
-class SyncStatus(str, enum.Enum):
+class SyncStatus(enum.StrEnum):
     pending = "pending"
     running = "running"
     completed = "completed"
@@ -86,9 +86,7 @@ class PkgInfo(UUIDMixin, Base):
     raw_plist: Mapped[dict | None] = mapped_column(JSONB)
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -97,9 +95,7 @@ class PkgInfo(UUIDMixin, Base):
         secondary="pkg_info_catalog", back_populates="pkg_infos", lazy="selectin"
     )
 
-    __table_args__ = (
-        UniqueConstraint("name", "version", name="uq_pkg_info_name_version"),
-    )
+    __table_args__ = (UniqueConstraint("name", "version", name="uq_pkg_info_name_version"),)
 
 
 class Catalog(UUIDMixin, Base):
@@ -110,9 +106,7 @@ class Catalog(UUIDMixin, Base):
     description: Mapped[str | None] = mapped_column(Text)
     is_production: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     pkg_infos: Mapped[list["PkgInfo"]] = relationship(
         secondary="pkg_info_catalog", back_populates="catalogs", lazy="selectin"
@@ -141,9 +135,7 @@ class Manifest(UUIDMixin, Base):
     display_name: Mapped[str | None] = mapped_column(Text)
     conditional_items: Mapped[dict | None] = mapped_column(JSONB)
     notes: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -197,9 +189,7 @@ class ManifestItem(UUIDMixin, Base):
         index=True,
     )
     item_name: Mapped[str] = mapped_column(Text, nullable=False)
-    item_type: Mapped[ItemType] = mapped_column(
-        Enum(ItemType, name="item_type_enum", native_enum=True), nullable=False
-    )
+    item_type: Mapped[ItemType] = mapped_column(Enum(ItemType, name="item_type_enum", native_enum=True), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
     manifest: Mapped["Manifest"] = relationship(back_populates="items")
@@ -220,12 +210,8 @@ class ManifestInclusion(Base):
     )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
-    parent: Mapped["Manifest"] = relationship(
-        foreign_keys=[parent_manifest_id], back_populates="included_manifests"
-    )
-    child: Mapped["Manifest"] = relationship(
-        foreign_keys=[child_manifest_id], back_populates="included_by"
-    )
+    parent: Mapped["Manifest"] = relationship(foreign_keys=[parent_manifest_id], back_populates="included_manifests")
+    child: Mapped["Manifest"] = relationship(foreign_keys=[child_manifest_id], back_populates="included_by")
 
 
 class PromotionRule(UUIDMixin, Base):
@@ -249,9 +235,7 @@ class PromotionRule(UUIDMixin, Base):
     )
     auto_promote_days: Mapped[int | None] = mapped_column(Integer)
     requires_approval: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     source_catalog: Mapped["Catalog"] = relationship(foreign_keys=[source_catalog_id])
     target_catalog: Mapped["Catalog"] = relationship(foreign_keys=[target_catalog_id])
@@ -272,9 +256,7 @@ class SyncJob(UUIDMixin, Base):
     error_message: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Icon(UUIDMixin, Base):
@@ -285,6 +267,4 @@ class Icon(UUIDMixin, Base):
     content_type: Mapped[str | None] = mapped_column(Text)
     file_size: Mapped[int | None] = mapped_column(Integer)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -1,4 +1,3 @@
-from automunki.models.base import Base
 from automunki.models.audit import AuditLog
 from automunki.models.autopkg import (
     AutoPkgRecipe,
@@ -7,6 +6,7 @@ from automunki.models.autopkg import (
     AutoPkgRunResult,
     TrustChangeRequest,
 )
+from automunki.models.base import Base
 from automunki.models.client import ClientInstallReport, ClientMachine
 from automunki.models.munki import (
     Catalog,

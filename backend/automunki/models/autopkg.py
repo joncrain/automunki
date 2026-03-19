@@ -17,7 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from automunki.models.base import Base, UUIDMixin
 
 
-class RunStatus(str, enum.Enum):
+class RunStatus(enum.StrEnum):
     pending = "pending"
     running = "running"
     completed = "completed"
@@ -25,14 +25,14 @@ class RunStatus(str, enum.Enum):
     cancelled = "cancelled"
 
 
-class RunTriggerType(str, enum.Enum):
+class RunTriggerType(enum.StrEnum):
     scheduled = "scheduled"
     manual_ui = "manual_ui"
     manual_api = "manual_api"
     workflow_dispatch = "workflow_dispatch"
 
 
-class RecipeResultStatus(str, enum.Enum):
+class RecipeResultStatus(enum.StrEnum):
     success = "success"
     imported = "imported"
     no_change = "no_change"
@@ -40,7 +40,7 @@ class RecipeResultStatus(str, enum.Enum):
     trust_failed = "trust_failed"
 
 
-class ApprovalStatus(str, enum.Enum):
+class ApprovalStatus(enum.StrEnum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
@@ -55,13 +55,9 @@ class AutoPkgRepo(UUIDMixin, Base):
     description: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    recipes: Mapped[list["AutoPkgRecipe"]] = relationship(
-        back_populates="repo", lazy="selectin"
-    )
+    recipes: Mapped[list["AutoPkgRecipe"]] = relationship(back_populates="repo", lazy="selectin")
 
 
 class GitHubRecipeRepo(UUIDMixin, Base):
@@ -69,9 +65,7 @@ class GitHubRecipeRepo(UUIDMixin, Base):
 
     __tablename__ = "github_recipe_repo"
 
-    full_name: Mapped[str] = mapped_column(
-        Text, unique=True, nullable=False, index=True
-    )
+    full_name: Mapped[str] = mapped_column(Text, unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     html_url: Mapped[str] = mapped_column(Text, nullable=False)
     clone_url: Mapped[str | None] = mapped_column(Text)
@@ -79,9 +73,7 @@ class GitHubRecipeRepo(UUIDMixin, Base):
     stars: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[str | None] = mapped_column(Text)
     default_branch: Mapped[str | None] = mapped_column(Text)
-    synced_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     cached_recipes: Mapped[list["GitHubRecipe"]] = relationship(
         back_populates="repo", cascade="all, delete-orphan", lazy="selectin"
@@ -108,7 +100,7 @@ class GitHubRecipe(UUIDMixin, Base):
     repo: Mapped["GitHubRecipeRepo"] = relationship(back_populates="cached_recipes")
 
 
-class TrustStatus(str, enum.Enum):
+class TrustStatus(enum.StrEnum):
     unknown = "unknown"
     verified = "verified"
     failed = "failed"
@@ -136,9 +128,7 @@ class AutoPkgRecipe(UUIDMixin, Base):
     auto_promote: Mapped[bool] = mapped_column(Boolean, default=False)
     target_catalogs: Mapped[list | None] = mapped_column(JSONB)
 
-    trust_status: Mapped[str] = mapped_column(
-        Text, default="unknown", server_default="unknown"
-    )
+    trust_status: Mapped[str] = mapped_column(Text, default="unknown", server_default="unknown")
     trust_diff: Mapped[dict | None] = mapped_column(JSONB)
     trust_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trust_approved_by: Mapped[str | None] = mapped_column(Text)
@@ -147,9 +137,7 @@ class AutoPkgRecipe(UUIDMixin, Base):
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_run_status: Mapped[str | None] = mapped_column(Text)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -160,7 +148,7 @@ class AutoPkgRecipe(UUIDMixin, Base):
     )
 
 
-class TrustChangeRequestStatus(str, enum.Enum):
+class TrustChangeRequestStatus(enum.StrEnum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
@@ -178,19 +166,13 @@ class TrustChangeRequest(UUIDMixin, Base):
     old_trust_info: Mapped[dict | None] = mapped_column(JSONB)
     new_trust_info: Mapped[dict | None] = mapped_column(JSONB)
     diff: Mapped[dict | None] = mapped_column(JSONB)
-    status: Mapped[str] = mapped_column(
-        Text, default="pending", server_default="pending"
-    )
-    requested_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    status: Mapped[str] = mapped_column(Text, default="pending", server_default="pending")
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     reviewed_by: Mapped[str | None] = mapped_column(Text)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     comment: Mapped[str | None] = mapped_column(Text)
 
-    recipe: Mapped["AutoPkgRecipe"] = relationship(
-        back_populates="trust_change_requests"
-    )
+    recipe: Mapped["AutoPkgRecipe"] = relationship(back_populates="trust_change_requests")
 
 
 class AutoPkgRun(UUIDMixin, Base):
@@ -218,9 +200,7 @@ class AutoPkgRun(UUIDMixin, Base):
     error_message: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     results: Mapped[list["AutoPkgRunResult"]] = relationship(
         back_populates="run", cascade="all, delete-orphan", lazy="selectin"
@@ -265,8 +245,21 @@ class AutoPkgRunResult(UUIDMixin, Base):
     error_message: Mapped[str | None] = mapped_column(Text)
 
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     run: Mapped["AutoPkgRun"] = relationship(back_populates="results")
+
+
+class AutoPkgMetadataCache(UUIDMixin, Base):
+    """Singleton row storing the cloud-autopkg-runner metadata cache JSON.
+
+    The cache tracks download ETags/timestamps so the runner can skip
+    unchanged downloads across workflow runs.
+    """
+
+    __tablename__ = "autopkg_metadata_cache"
+
+    cache_data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

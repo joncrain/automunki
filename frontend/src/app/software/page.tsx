@@ -1,33 +1,33 @@
-"use client";
+'use client'
 
-import { useQuery } from "@tanstack/react-query";
-import { type ColumnDef } from "@tanstack/react-table";
-import Link from "next/link";
-import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
-import {
-  api,
-  type CatalogRead,
-  type PaginatedResponse,
-  type PkgInfoSummary,
-} from "@/lib/api";
-import { formatDate, initials, avatarColor } from "@/lib/format";
-import { DataTable } from "@/components/data-table";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { useQuery } from '@tanstack/react-query'
+import type { ColumnDef } from '@tanstack/react-table'
+import { Search, X } from 'lucide-react'
+import Link from 'next/link'
+import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
+import { DataTable } from '@/components/data-table'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Search, X } from "lucide-react";
+} from '@/components/ui/select'
+import {
+  api,
+  type CatalogRead,
+  type PaginatedResponse,
+  type PkgInfoSummary,
+} from '@/lib/api'
+import { avatarColor, formatDate, initials } from '@/lib/format'
 
 const columns: ColumnDef<PkgInfoSummary>[] = [
   {
-    accessorKey: "display_name",
-    header: "Name",
+    accessorKey: 'display_name',
+    header: 'Name',
     cell: ({ row }) => (
       <Link
         href={`/software/${row.original.id}`}
@@ -45,30 +45,30 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
     ),
   },
   {
-    accessorKey: "version",
-    header: "Version",
+    accessorKey: 'version',
+    header: 'Version',
     cell: ({ row }) => (
       <span className="font-mono text-sm">{row.original.version}</span>
     ),
   },
   {
-    accessorKey: "category",
-    header: "Category",
+    accessorKey: 'category',
+    header: 'Category',
     cell: ({ row }) =>
       row.original.category ? (
         <Badge variant="outline">{row.original.category}</Badge>
       ) : null,
   },
   {
-    accessorKey: "developer",
-    header: "Developer",
+    accessorKey: 'developer',
+    header: 'Developer',
     cell: ({ row }) => (
       <span className="truncate text-sm">{row.original.developer}</span>
     ),
   },
   {
-    accessorKey: "catalog_names",
-    header: "Catalogs",
+    accessorKey: 'catalog_names',
+    header: 'Catalogs',
     cell: ({ row }) => (
       <div className="flex gap-1">
         {row.original.catalog_names.map((c) => (
@@ -80,69 +80,69 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
     ),
   },
   {
-    accessorKey: "unattended_install",
-    header: "Unattended",
+    accessorKey: 'unattended_install',
+    header: 'Unattended',
     cell: ({ row }) => (
-      <Badge variant={row.original.unattended_install ? "default" : "outline"}>
-        {row.original.unattended_install ? "Yes" : "No"}
+      <Badge variant={row.original.unattended_install ? 'default' : 'outline'}>
+        {row.original.unattended_install ? 'Yes' : 'No'}
       </Badge>
     ),
   },
   {
-    accessorKey: "updated_at",
-    header: "Updated",
+    accessorKey: 'updated_at',
+    header: 'Updated',
     cell: ({ row }) => (
       <span suppressHydrationWarning className="text-sm text-muted-foreground">
         {formatDate(row.original.updated_at)}
       </span>
     ),
   },
-];
+]
 
 export default function SoftwarePage() {
-  const [page, setPage] = useQueryState("page", parseAsInteger.withDefault(1));
+  const [page, setPage] = useQueryState('page', parseAsInteger.withDefault(1))
   const [pageSize, setPageSize] = useQueryState(
-    "pageSize",
-    parseAsInteger.withDefault(50)
-  );
+    'pageSize',
+    parseAsInteger.withDefault(50),
+  )
   const [search, setSearch] = useQueryState(
-    "search",
-    parseAsString.withDefault("")
-  );
+    'search',
+    parseAsString.withDefault(''),
+  )
   const [category, setCategory] = useQueryState(
-    "category",
-    parseAsString.withDefault("")
-  );
+    'category',
+    parseAsString.withDefault(''),
+  )
   const [catalog, setCatalog] = useQueryState(
-    "catalog",
-    parseAsString.withDefault("")
-  );
+    'catalog',
+    parseAsString.withDefault(''),
+  )
 
   const { data, isLoading } = useQuery({
-    queryKey: ["pkginfo", page, pageSize, search, category, catalog],
+    queryKey: ['pkginfo', page, pageSize, search, category, catalog],
     queryFn: () => {
-      const params = new URLSearchParams();
-      params.set("page", String(page));
-      params.set("page_size", String(pageSize));
-      if (search) params.set("search", search);
-      if (category) params.set("category", category);
-      if (catalog) params.set("catalog", catalog);
+      const params = new URLSearchParams()
+      params.set('page', String(page))
+      params.set('page_size', String(pageSize))
+      if (search) params.set('search', search)
+      if (category) params.set('category', category)
+      if (catalog) params.set('catalog', catalog)
       return api.get<PaginatedResponse<PkgInfoSummary>>(
-        `/pkginfo?${params.toString()}`
-      );
+        `/pkginfo?${params.toString()}`,
+      )
     },
-  });
+  })
 
   const { data: catalogs } = useQuery({
-    queryKey: ["catalogs"],
-    queryFn: () => api.get<CatalogRead[]>("/catalogs"),
-  });
+    queryKey: ['catalogs'],
+    queryFn: () => api.get<CatalogRead[]>('/catalogs'),
+  })
 
   const categories = Array.from(
-    new Set((data?.items ?? []).map((i) => i.category).filter(Boolean))
-  ).sort() as string[];
+    new Set((data?.items ?? []).map((i) => i.category).filter(Boolean)),
+  ).sort() as string[]
 
-  const hasFilters = search || category || catalog;
+  const hasFilters = search || category || catalog
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
@@ -157,18 +157,18 @@ export default function SoftwarePage() {
             placeholder="Search software..."
             value={search}
             onChange={(e) => {
-              setSearch(e.target.value || null);
-              setPage(1);
+              setSearch(e.target.value || null)
+              setPage(1)
             }}
             className="pl-9"
           />
         </div>
 
         <Select
-          value={category || "_all"}
+          value={category || '_all'}
           onValueChange={(v) => {
-            setCategory(v === "_all" ? null : v);
-            setPage(1);
+            setCategory(v === '_all' ? null : v)
+            setPage(1)
           }}
         >
           <SelectTrigger className="w-[160px]">
@@ -185,10 +185,10 @@ export default function SoftwarePage() {
         </Select>
 
         <Select
-          value={catalog || "_all"}
+          value={catalog || '_all'}
           onValueChange={(v) => {
-            setCatalog(v === "_all" ? null : v);
-            setPage(1);
+            setCatalog(v === '_all' ? null : v)
+            setPage(1)
           }}
         >
           <SelectTrigger className="w-[160px]">
@@ -210,10 +210,10 @@ export default function SoftwarePage() {
             size="sm"
             aria-label="Clear filters"
             onClick={() => {
-              setSearch(null);
-              setCategory(null);
-              setCatalog(null);
-              setPage(1);
+              setSearch(null)
+              setCategory(null)
+              setCatalog(null)
+              setPage(1)
             }}
           >
             <X className="mr-1 h-4 w-4" />
@@ -232,12 +232,12 @@ export default function SoftwarePage() {
           total={data?.total}
           onPageChange={setPage}
           onPageSizeChange={(size) => {
-            setPageSize(size);
-            setPage(1);
+            setPageSize(size)
+            setPage(1)
           }}
           isLoading={isLoading}
         />
       </div>
     </div>
-  );
+  )
 }

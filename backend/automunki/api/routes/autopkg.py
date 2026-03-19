@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
@@ -10,6 +10,7 @@ from automunki.api.deps import get_session
 from automunki.core.security import current_optional_user
 from automunki.models.autopkg import (
     ApprovalStatus,
+    AutoPkgMetadataCache,
     AutoPkgRecipe,
     AutoPkgRepo,
     AutoPkgRun,
@@ -21,6 +22,7 @@ from automunki.models.autopkg import (
     RunTriggerType,
     TrustChangeRequest,
 )
+from automunki.models.munki import Catalog, PkgInfo, PkgInfoCatalog
 from automunki.models.user import User
 from automunki.schemas.autopkg import (
     ApprovalRequest,
@@ -29,6 +31,9 @@ from automunki.schemas.autopkg import (
     AutoPkgRecipeUpdate,
     AutoPkgRunRead,
     GitHubRecipeRepoRead,
+    MetadataCacheRead,
+    MetadataCacheWrite,
+    PkgInfoIngest,
     RunResultCreate,
     RunResultRead,
     TriggerRunRequest,
@@ -82,7 +87,7 @@ async def trigger_run(
         run.error_message = result["error"]
     else:
         run.status = RunStatus.running
-        run.started_at = datetime.now(timezone.utc)
+        run.started_at = datetime.now(UTC)
 
     await create_audit_entry(
         session,
@@ -105,9 +110,7 @@ async def list_runs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    count = (
-        await session.execute(select(func.count()).select_from(AutoPkgRun))
-    ).scalar() or 0
+    count = (await session.execute(select(func.count()).select_from(AutoPkgRun))).scalar() or 0
 
     result = await session.execute(
         select(AutoPkgRun)
@@ -130,9 +133,7 @@ async def list_runs(
 @router.get("/runs/config")
 async def get_run_config(
     session: AsyncSession = Depends(get_session),
-    recipes: str = Query(
-        None, description="Comma-separated recipe names to include"
-    ),
+    recipes: str = Query(None, description="Comma-separated recipe names to include"),
 ):
     """
     Return the configuration needed by the GitHub Actions runner:
@@ -199,11 +200,11 @@ async def get_run_config(
 
         if recipe.repo:
             repo_urls.add(recipe.repo.url)
-        else:
-            inferred = infer_repos_from_trust_info(recipe.trust_info)
-            repo_urls.update(
-                f"https://github.com/{r}.git" for r in inferred
-            )
+        trust_for_repos = recipe.trust_info
+        if not trust_for_repos and recipe.override_data:
+            trust_for_repos = recipe.override_data.get("ParentRecipeTrustInfo")
+        inferred = infer_repos_from_trust_info(trust_for_repos)
+        repo_urls.update(f"https://github.com/{r}.git" for r in inferred)
 
     return {
         "overrides": overrides,
@@ -219,9 +220,7 @@ async def get_run(
     session: AsyncSession = Depends(get_session),
 ):
     result = await session.execute(
-        select(AutoPkgRun)
-        .options(selectinload(AutoPkgRun.results))
-        .where(AutoPkgRun.id == run_id)
+        select(AutoPkgRun).options(selectinload(AutoPkgRun.results)).where(AutoPkgRun.id == run_id)
     )
     run = result.scalar_one_or_none()
     if not run:
@@ -256,9 +255,7 @@ async def post_run_result(
         duration_seconds=data.duration_seconds,
     )
 
-    recipe = await session.execute(
-        select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == data.recipe_identifier)
-    )
+    recipe = await session.execute(select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == data.recipe_identifier))
     recipe_obj = recipe.scalar_one_or_none()
 
     if data.status == "trust_failed":
@@ -283,30 +280,22 @@ async def complete_run(
 ):
     """Called by the runner when the entire run is complete."""
     result = await session.execute(
-        select(AutoPkgRun)
-        .options(selectinload(AutoPkgRun.results))
-        .where(AutoPkgRun.id == run_id)
+        select(AutoPkgRun).options(selectinload(AutoPkgRun.results)).where(AutoPkgRun.id == run_id)
     )
     run = result.scalar_one_or_none()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
     run.status = RunStatus.completed
-    run.completed_at = datetime.now(timezone.utc)
+    run.completed_at = datetime.now(UTC)
     run.total_recipes = len(run.results)
     run.recipes_succeeded = sum(
-        1
-        for r in run.results
-        if r.status in (RecipeResultStatus.success, RecipeResultStatus.no_change)
+        1 for r in run.results if r.status in (RecipeResultStatus.success, RecipeResultStatus.no_change)
     )
     run.recipes_failed = sum(
-        1
-        for r in run.results
-        if r.status in (RecipeResultStatus.failed, RecipeResultStatus.trust_failed)
+        1 for r in run.results if r.status in (RecipeResultStatus.failed, RecipeResultStatus.trust_failed)
     )
-    run.recipes_imported = sum(
-        1 for r in run.results if r.status == RecipeResultStatus.imported
-    )
+    run.recipes_imported = sum(1 for r in run.results if r.status == RecipeResultStatus.imported)
 
     await session.commit()
     return {"message": "Run completed", "run_id": str(run_id)}
@@ -330,15 +319,11 @@ async def create_recipe(
     session: AsyncSession = Depends(get_session),
     user: User | None = Depends(current_optional_user),
 ):
-    existing = await session.execute(
-        select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == data.identifier)
-    )
+    existing = await session.execute(select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == data.identifier))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Recipe already exists")
 
-    recipe = AutoPkgRecipe(
-        **data.model_dump(exclude={"github_repo", "recipe_path"})
-    )
+    recipe = AutoPkgRecipe(**data.model_dump(exclude={"github_repo", "recipe_path"}))
     session.add(recipe)
 
     await create_audit_entry(
@@ -515,11 +500,7 @@ async def list_trust_status(
     status: str | None = Query(None),
 ):
     """List all recipes with their trust status. Optionally filter by status."""
-    query = (
-        select(AutoPkgRecipe)
-        .where(AutoPkgRecipe.is_override.is_(True))
-        .order_by(AutoPkgRecipe.name)
-    )
+    query = select(AutoPkgRecipe).where(AutoPkgRecipe.is_override.is_(True)).order_by(AutoPkgRecipe.name)
     if status:
         query = query.where(AutoPkgRecipe.trust_status == status)
     result = await session.execute(query)
@@ -545,7 +526,7 @@ async def verify_recipe_trust(
         parent_recipe_identifier=recipe.parent_recipe,
     )
 
-    recipe.trust_verified_at = datetime.now(timezone.utc)
+    recipe.trust_verified_at = datetime.now(UTC)
 
     if result.status == "verified":
         recipe.trust_status = "verified"
@@ -580,8 +561,7 @@ async def verify_recipe_trust(
         entity_name=recipe.name,
         user_id=user.id if user else None,
         user_email=user.email if user else None,
-        notes=f"Trust status: {result.status}"
-        + (f" - {result.error}" if result.error else ""),
+        notes=f"Trust status: {result.status}" + (f" - {result.error}" if result.error else ""),
     )
 
     await session.commit()
@@ -627,17 +607,16 @@ async def update_recipe_trust(
     if not new_trust.get("parent_recipes"):
         raise HTTPException(
             status_code=502,
-            detail="Could not resolve parent recipes from GitHub. "
-            "Check that the parent recipe identifier is correct.",
+            detail="Could not resolve parent recipes from GitHub. Check that the parent recipe identifier is correct.",
         )
 
     old_trust = recipe.trust_info
     recipe.trust_info = new_trust
     recipe.trust_status = "verified"
     recipe.trust_diff = None
-    recipe.trust_verified_at = datetime.now(timezone.utc)
+    recipe.trust_verified_at = datetime.now(UTC)
     recipe.trust_approved_by = user.email if user else "system"
-    recipe.trust_approved_at = datetime.now(timezone.utc)
+    recipe.trust_approved_at = datetime.now(UTC)
 
     await create_audit_entry(
         session,
@@ -685,7 +664,7 @@ async def approve_recipe_trust(
         raise HTTPException(status_code=400, detail="No pending trust change request")
 
     reviewer = user.email if user else "anonymous"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if data.approved:
         change_request.status = "approved"
@@ -775,7 +754,7 @@ async def update_repos_and_verify_trust(
                 stored_trust_info=recipe.trust_info,
                 parent_recipe_identifier=recipe.parent_recipe,
             )
-            recipe.trust_verified_at = datetime.now(timezone.utc)
+            recipe.trust_verified_at = datetime.now(UTC)
 
             if verification.status == "verified":
                 recipe.trust_status = "verified"
@@ -854,14 +833,10 @@ async def sync_single_repo(
     """Sync recipes for a single cached repo."""
     full_name = f"{repo_owner}/{repo_name}"
     repo = (
-        await session.execute(
-            select(GitHubRecipeRepo).where(GitHubRecipeRepo.full_name == full_name)
-        )
+        await session.execute(select(GitHubRecipeRepo).where(GitHubRecipeRepo.full_name == full_name))
     ).scalar_one_or_none()
     if not repo:
-        raise HTTPException(
-            status_code=404, detail="Repo not in cache. Sync repos first."
-        )
+        raise HTTPException(status_code=404, detail="Repo not in cache. Sync repos first.")
     count = await sync_repo_recipes_to_cache(session, repo)
     return {"repo": full_name, "recipes_synced": count}
 
@@ -937,9 +912,7 @@ async def add_recipe_override(
     override_plist["ParentRecipeTrustInfo"] = plist_trust
 
     clone_url = f"https://github.com/{data.github_repo}.git"
-    result = await session.execute(
-        select(AutoPkgRepo).where(AutoPkgRepo.url == clone_url)
-    )
+    result = await session.execute(select(AutoPkgRepo).where(AutoPkgRepo.url == clone_url))
     repo = result.scalar_one_or_none()
     if not repo:
         repo = AutoPkgRepo(
@@ -964,9 +937,7 @@ async def add_recipe_override(
         "trust_status": "verified",
     }
 
-    existing = await session.execute(
-        select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == payload["identifier"])
-    )
+    existing = await session.execute(select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == payload["identifier"]))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Recipe override already exists")
 
@@ -1041,11 +1012,9 @@ async def approve_result(
     if result.approval_status != ApprovalStatus.pending:
         raise HTTPException(status_code=400, detail="Result is not pending approval")
 
-    result.approval_status = (
-        ApprovalStatus.approved if data.approved else ApprovalStatus.rejected
-    )
+    result.approval_status = ApprovalStatus.approved if data.approved else ApprovalStatus.rejected
     result.approved_by = user.email if user else "anonymous"
-    result.approved_at = datetime.now(timezone.utc)
+    result.approved_at = datetime.now(UTC)
     result.approval_comment = data.comment
 
     await create_audit_entry(
@@ -1073,3 +1042,124 @@ async def list_pending_approvals(
         .order_by(AutoPkgRunResult.created_at.desc())
     )
     return [RunResultRead.model_validate(r) for r in result.scalars().all()]
+
+
+# ── Metadata cache ───────────────────────────────────────────────────────
+
+
+@router.get("/metadata-cache", response_model=MetadataCacheRead)
+async def get_metadata_cache(
+    session: AsyncSession = Depends(get_session),
+):
+    """Return the stored cloud-autopkg-runner metadata cache."""
+    result = await session.execute(select(AutoPkgMetadataCache).limit(1))
+    row = result.scalar_one_or_none()
+    if not row:
+        return MetadataCacheRead(cache_data={}, updated_at=datetime.now(UTC))
+    return MetadataCacheRead.model_validate(row)
+
+
+@router.put("/metadata-cache", response_model=MetadataCacheRead)
+async def put_metadata_cache(
+    data: MetadataCacheWrite,
+    session: AsyncSession = Depends(get_session),
+):
+    """Upsert the cloud-autopkg-runner metadata cache."""
+    result = await session.execute(select(AutoPkgMetadataCache).limit(1))
+    row = result.scalar_one_or_none()
+    if row:
+        row.cache_data = data.cache_data
+    else:
+        row = AutoPkgMetadataCache(cache_data=data.cache_data)
+        session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return MetadataCacheRead.model_validate(row)
+
+
+# ── Pkginfo ingestion ────────────────────────────────────────────────────
+
+
+@router.post("/pkginfo/ingest")
+async def ingest_pkginfo(
+    data: PkgInfoIngest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Ingest a pkginfo plist dict from an AutoPkg run.
+
+    Creates a PkgInfo row and associates it with the appropriate catalogs.
+    Returns 200 with ``skipped=true`` if the name+version already exists.
+    """
+    plist = data.pkginfo
+    name = plist.get("name")
+    version = plist.get("version")
+    if not name or not version:
+        raise HTTPException(status_code=422, detail="pkginfo must contain 'name' and 'version'")
+
+    existing = await session.execute(select(PkgInfo).where(PkgInfo.name == name, PkgInfo.version == version))
+    if existing.scalar_one_or_none():
+        return {
+            "message": "Already exists",
+            "skipped": True,
+            "name": name,
+            "version": version,
+        }
+
+    catalog_names: list[str] = plist.get("catalogs", [])
+
+    pkg = PkgInfo(
+        name=name,
+        version=version,
+        display_name=plist.get("display_name"),
+        description=plist.get("description"),
+        category=plist.get("category"),
+        developer=plist.get("developer"),
+        icon_name=plist.get("icon_name"),
+        installer_item_location=plist.get("installer_item_location"),
+        installer_item_hash=plist.get("installer_item_hash"),
+        installer_item_size=plist.get("installer_item_size"),
+        installed_size=plist.get("installed_size"),
+        installer_type=plist.get("installer_type"),
+        minimum_os_version=plist.get("minimum_os_version"),
+        maximum_os_version=plist.get("maximum_os_version"),
+        uninstall_method=plist.get("uninstall_method"),
+        unattended_install=plist.get("unattended_install", False),
+        unattended_uninstall=plist.get("unattended_uninstall", False),
+        autoremove=plist.get("autoremove", False),
+        uninstallable=plist.get("uninstallable", True),
+        installs=plist.get("installs"),
+        receipts=plist.get("receipts"),
+        blocking_applications=plist.get("blocking_applications"),
+        items_to_copy=plist.get("items_to_copy"),
+        supported_architectures=plist.get("supported_architectures"),
+        requires=plist.get("requires"),
+        update_for=plist.get("update_for"),
+        preinstall_script=plist.get("preinstall_script"),
+        postinstall_script=plist.get("postinstall_script"),
+        preuninstall_script=plist.get("preuninstall_script"),
+        postuninstall_script=plist.get("postuninstall_script"),
+        installcheck_script=plist.get("installcheck_script"),
+        uninstallcheck_script=plist.get("uninstallcheck_script"),
+        metadata_=plist.get("_metadata"),
+        raw_plist=plist,
+    )
+    session.add(pkg)
+    await session.flush()
+
+    for cat_name in catalog_names:
+        result = await session.execute(select(Catalog).where(Catalog.name == cat_name))
+        catalog = result.scalar_one_or_none()
+        if not catalog:
+            catalog = Catalog(name=cat_name)
+            session.add(catalog)
+            await session.flush()
+        session.add(PkgInfoCatalog(pkg_info_id=pkg.id, catalog_id=catalog.id))
+
+    await session.commit()
+    return {
+        "message": "Ingested",
+        "skipped": False,
+        "name": name,
+        "version": version,
+        "id": str(pkg.id),
+    }

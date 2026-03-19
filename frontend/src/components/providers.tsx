@@ -1,11 +1,11 @@
-"use client";
+'use client'
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ThemeProvider } from "next-themes";
-import { NuqsAdapter } from "nuqs/adapters/next/app";
-import { useState } from "react";
-import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ThemeProvider } from 'next-themes'
+import { NuqsAdapter } from 'nuqs/adapters/next/app'
+import { useState } from 'react'
+import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -17,8 +17,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
             refetchOnWindowFocus: false,
           },
         },
-      })
-  );
+      }),
+  )
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
@@ -31,5 +31,5 @@ export function Providers({ children }: { children: React.ReactNode }) {
         </QueryClientProvider>
       </NuqsAdapter>
     </ThemeProvider>
-  );
+  )
 }

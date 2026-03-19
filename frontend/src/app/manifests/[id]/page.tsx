@@ -1,34 +1,27 @@
-"use client";
+'use client'
 
-import { useCallback, useEffect, useState } from "react";
 import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { useParams } from "next/navigation";
-import { toast } from "sonner";
-import {
-  DndContext,
   closestCenter,
+  DndContext,
+  type DragEndEvent,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+} from '@dnd-kit/core'
 import {
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { api, type ManifestRead, type PaginatedResponse, type PkgInfoSummary } from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { GripVertical, Plus, Save, X } from 'lucide-react'
+import { useParams } from 'next/navigation'
+import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -36,7 +29,9 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
+} from '@/components/ui/breadcrumb'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Command,
   CommandEmpty,
@@ -44,25 +39,54 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
+} from '@/components/ui/command'
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover";
-import { GripVertical, Plus, Save, X } from "lucide-react";
+} from '@/components/ui/popover'
+import {
+  api,
+  type ManifestRead,
+  type PaginatedResponse,
+  type PkgInfoSummary,
+} from '@/lib/api'
 
 const ITEM_SECTIONS = [
-  { key: "managed_installs", label: "Managed Installs", variant: "outline" as const },
-  { key: "managed_uninstalls", label: "Managed Uninstalls", variant: "destructive" as const },
-  { key: "managed_updates", label: "Managed Updates", variant: "secondary" as const },
-  { key: "optional_installs", label: "Optional Installs", variant: "outline" as const },
-  { key: "featured_items", label: "Featured Items", variant: "default" as const },
-  { key: "default_installs", label: "Default Installs", variant: "secondary" as const },
-] as const;
+  {
+    key: 'managed_installs',
+    label: 'Managed Installs',
+    variant: 'outline' as const,
+  },
+  {
+    key: 'managed_uninstalls',
+    label: 'Managed Uninstalls',
+    variant: 'destructive' as const,
+  },
+  {
+    key: 'managed_updates',
+    label: 'Managed Updates',
+    variant: 'secondary' as const,
+  },
+  {
+    key: 'optional_installs',
+    label: 'Optional Installs',
+    variant: 'outline' as const,
+  },
+  {
+    key: 'featured_items',
+    label: 'Featured Items',
+    variant: 'default' as const,
+  },
+  {
+    key: 'default_installs',
+    label: 'Default Installs',
+    variant: 'secondary' as const,
+  },
+] as const
 
-type SectionKey = (typeof ITEM_SECTIONS)[number]["key"];
-type SectionsState = Record<SectionKey, string[]>;
+type SectionKey = (typeof ITEM_SECTIONS)[number]['key']
+type SectionsState = Record<SectionKey, string[]>
 
 function manifestToSections(m: ManifestRead): SectionsState {
   return {
@@ -72,89 +96,93 @@ function manifestToSections(m: ManifestRead): SectionsState {
     optional_installs: [...m.optional_installs],
     featured_items: [...m.featured_items],
     default_installs: [...m.default_installs],
-  };
+  }
 }
 
 export default function ManifestDetailPage() {
-  const params = useParams();
-  const queryClient = useQueryClient();
-  const id = params.id as string;
+  const params = useParams()
+  const queryClient = useQueryClient()
+  const id = params.id as string
 
-  const [sections, setSections] = useState<SectionsState | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [sections, setSections] = useState<SectionsState | null>(null)
+  const [dirty, setDirty] = useState(false)
 
   const { data: manifest, isLoading } = useQuery({
-    queryKey: ["manifest", id],
+    queryKey: ['manifest', id],
     queryFn: () => api.get<ManifestRead>(`/manifests/${id}`),
-  });
+  })
 
   useEffect(() => {
-    if (manifest && !sections) setSections(manifestToSections(manifest));
-  }, [manifest, sections]);
+    if (manifest && !sections) setSections(manifestToSections(manifest))
+  }, [manifest, sections])
 
   const saveMutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       api.put(`/manifests/${id}`, payload),
     onSuccess: () => {
-      toast.success("Manifest saved");
-      queryClient.invalidateQueries({ queryKey: ["manifest", id] });
-      queryClient.invalidateQueries({ queryKey: ["manifests"] });
-      setDirty(false);
+      toast.success('Manifest saved')
+      queryClient.invalidateQueries({ queryKey: ['manifest', id] })
+      queryClient.invalidateQueries({ queryKey: ['manifests'] })
+      setDirty(false)
     },
     onError: (err: Error) => toast.error(`Save failed: ${err.message}`),
-  });
+  })
 
   const handleBeforeUnload = useCallback(
     (e: BeforeUnloadEvent) => {
-      if (dirty) e.preventDefault();
+      if (dirty) e.preventDefault()
     },
-    [dirty]
-  );
+    [dirty],
+  )
 
   useEffect(() => {
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [handleBeforeUnload]);
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [handleBeforeUnload])
 
   const handleSave = () => {
-    if (!sections) return;
-    saveMutation.mutate({ ...sections });
-  };
+    if (!sections) return
+    saveMutation.mutate({ ...sections })
+  }
 
   const addItem = (section: SectionKey, name: string) => {
     setSections((prev) => {
-      if (!prev) return prev;
-      if (prev[section].includes(name)) return prev;
-      return { ...prev, [section]: [...prev[section], name] };
-    });
-    setDirty(true);
-  };
+      if (!prev) return prev
+      if (prev[section].includes(name)) return prev
+      return { ...prev, [section]: [...prev[section], name] }
+    })
+    setDirty(true)
+  }
 
   const removeItem = (section: SectionKey, name: string) => {
     setSections((prev) => {
-      if (!prev) return prev;
-      return { ...prev, [section]: prev[section].filter((n) => n !== name) };
-    });
-    setDirty(true);
-  };
+      if (!prev) return prev
+      return { ...prev, [section]: prev[section].filter((n) => n !== name) }
+    })
+    setDirty(true)
+  }
 
-  const reorderItems = (section: SectionKey, oldIndex: number, newIndex: number) => {
+  const reorderItems = (
+    section: SectionKey,
+    oldIndex: number,
+    newIndex: number,
+  ) => {
     setSections((prev) => {
-      if (!prev) return prev;
-      const items = [...prev[section]];
-      const [moved] = items.splice(oldIndex, 1);
-      items.splice(newIndex, 0, moved);
-      return { ...prev, [section]: items };
-    });
-    setDirty(true);
-  };
+      if (!prev) return prev
+      const items = [...prev[section]]
+      const [moved] = items.splice(oldIndex, 1)
+      items.splice(newIndex, 0, moved)
+      return { ...prev, [section]: items }
+    })
+    setDirty(true)
+  }
 
   if (isLoading || !manifest) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
         Loading...
       </div>
-    );
+    )
   }
 
   return (
@@ -187,7 +215,7 @@ export default function ManifestDetailPage() {
           disabled={!dirty || saveMutation.isPending}
         >
           <Save className="mr-1 h-4 w-4" />
-          {saveMutation.isPending ? "Saving..." : "Save Changes"}
+          {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
 
@@ -225,7 +253,7 @@ export default function ManifestDetailPage() {
         </Card>
       )}
     </div>
-  );
+  )
 }
 
 function SortableSection({
@@ -237,30 +265,30 @@ function SortableSection({
   onRemove,
   onReorder,
 }: {
-  sectionKey: string;
-  label: string;
-  badgeVariant: "outline" | "destructive" | "secondary" | "default";
-  items: string[];
-  onAdd: (name: string) => void;
-  onRemove: (name: string) => void;
-  onReorder: (oldIndex: number, newIndex: number) => void;
+  sectionKey: string
+  label: string
+  badgeVariant: 'outline' | 'destructive' | 'secondary' | 'default'
+  items: string[]
+  onAdd: (name: string) => void
+  onRemove: (name: string) => void
+  onReorder: (oldIndex: number, newIndex: number) => void
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
+    }),
+  )
 
   const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = items.indexOf(active.id as string);
-    const newIndex = items.indexOf(over.id as string);
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = items.indexOf(active.id as string)
+    const newIndex = items.indexOf(over.id as string)
     if (oldIndex !== -1 && newIndex !== -1) {
-      onReorder(oldIndex, newIndex);
+      onReorder(oldIndex, newIndex)
     }
-  };
+  }
 
   return (
     <Card>
@@ -305,7 +333,7 @@ function SortableSection({
         )}
       </CardContent>
     </Card>
-  );
+  )
 }
 
 function SortableItem({
@@ -313,9 +341,9 @@ function SortableItem({
   badgeVariant,
   onRemove,
 }: {
-  id: string;
-  badgeVariant: "outline" | "destructive" | "secondary" | "default";
-  onRemove: () => void;
+  id: string
+  badgeVariant: 'outline' | 'destructive' | 'secondary' | 'default'
+  onRemove: () => void
 }) {
   const {
     attributes,
@@ -324,13 +352,15 @@ function SortableItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id });
+  } = useSortable({
+    id,
+  })
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-  };
+  }
 
   return (
     <div
@@ -359,31 +389,31 @@ function SortableItem({
         <X className="h-4 w-4" />
       </button>
     </div>
-  );
+  )
 }
 
 function AddSoftwareButton({
   onAdd,
   existingItems,
 }: {
-  onAdd: (name: string) => void;
-  existingItems: string[];
+  onAdd: (name: string) => void
+  existingItems: string[]
 }) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
 
   const { data } = useQuery({
-    queryKey: ["pkginfo-search", search],
+    queryKey: ['pkginfo-search', search],
     queryFn: () =>
       api.get<PaginatedResponse<PkgInfoSummary>>(
-        `/pkginfo?page_size=20${search ? `&search=${encodeURIComponent(search)}` : ""}`
+        `/pkginfo?page_size=20${search ? `&search=${encodeURIComponent(search)}` : ''}`,
       ),
     enabled: open,
-  });
+  })
 
   const uniqueNames = Array.from(
-    new Set((data?.items ?? []).map((i) => i.name))
-  ).filter((n) => !existingItems.includes(n));
+    new Set((data?.items ?? []).map((i) => i.name)),
+  ).filter((n) => !existingItems.includes(n))
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -407,9 +437,9 @@ function AddSoftwareButton({
                   key={name}
                   value={name}
                   onSelect={() => {
-                    onAdd(name);
-                    setOpen(false);
-                    setSearch("");
+                    onAdd(name)
+                    setOpen(false)
+                    setSearch('')
                   }}
                 >
                   {name}
@@ -420,5 +450,5 @@ function AddSoftwareButton({
         </Command>
       </PopoverContent>
     </Popover>
-  );
+  )
 }

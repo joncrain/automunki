@@ -1,10 +1,9 @@
-"use client";
+'use client'
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
 
 export default function SettingsPage() {
   return (
@@ -18,11 +17,7 @@ export default function SettingsPage() {
         <CardContent className="space-y-4">
           <div className="grid gap-2">
             <Label htmlFor="github-repo">Repository</Label>
-            <Input
-              id="github-repo"
-              placeholder="owner/repo"
-              disabled
-            />
+            <Input id="github-repo" placeholder="owner/repo" disabled />
             <p className="text-sm text-muted-foreground">
               Configured via GITHUB_REPO environment variable
             </p>
@@ -101,5 +96,5 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }

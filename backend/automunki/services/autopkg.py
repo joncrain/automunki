@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from httpx import AsyncClient
@@ -101,9 +101,7 @@ async def discover_autopkg_repos() -> list[dict]:
     return repos
 
 
-async def discover_recipes_in_repo(
-    repo_full_name: str, default_branch: str | None = None
-) -> list[dict]:
+async def discover_recipes_in_repo(repo_full_name: str, default_branch: str | None = None) -> list[dict]:
     """
     Search a GitHub repo for .munki.recipe and .munki.recipe.yaml files
     using the Git tree API (recursive).
@@ -131,9 +129,7 @@ async def discover_recipes_in_repo(
                     branch_found = "master"
 
         if resp.status_code != 200:
-            logger.warning(
-                "get_ref_failed", repo=repo_full_name, status=resp.status_code
-            )
+            logger.warning("get_ref_failed", repo=repo_full_name, status=resp.status_code)
             return recipes
 
         sha = resp.json()["object"]["sha"]
@@ -144,9 +140,7 @@ async def discover_recipes_in_repo(
             params={"recursive": "1"},
         )
         if tree_resp.status_code != 200:
-            logger.warning(
-                "get_tree_failed", repo=repo_full_name, status=tree_resp.status_code
-            )
+            logger.warning("get_tree_failed", repo=repo_full_name, status=tree_resp.status_code)
             return recipes
 
         tree = tree_resp.json().get("tree", [])
@@ -163,9 +157,7 @@ async def discover_recipes_in_repo(
         filename = path.rsplit("/", 1)[-1]
         recipe_name = filename.split(".munki.recipe")[0]
 
-        identifier_guess = (
-            f"com.github.{repo_full_name.replace('/', '.')}.munki.{recipe_name}"
-        )
+        identifier_guess = f"com.github.{repo_full_name.replace('/', '.')}.munki.{recipe_name}"
 
         recipes.append(
             {
@@ -224,9 +216,7 @@ async def search_github_recipes(query: str = "munki recipe") -> list[dict]:
 
                 recipe_name = filename.split(".munki.recipe")[0]
                 repo_full = item["repository"]["full_name"]
-                identifier_guess = (
-                    f"com.github.{repo_full.replace('/', '.')}.munki.{recipe_name}"
-                )
+                identifier_guess = f"com.github.{repo_full.replace('/', '.')}.munki.{recipe_name}"
                 results.append(
                     {
                         "name": recipe_name,
@@ -303,16 +293,12 @@ async def sync_repos_to_cache(session: AsyncSession) -> dict:
     }
 
 
-async def sync_repo_recipes_to_cache(
-    session: AsyncSession, repo: GitHubRecipeRepo
-) -> int:
+async def sync_repo_recipes_to_cache(session: AsyncSession, repo: GitHubRecipeRepo) -> int:
     """
     Fetch all .munki.recipe files from a single GitHub repo and cache them locally.
     Returns the number of recipes cached.
     """
-    remote_recipes = await discover_recipes_in_repo(
-        repo.full_name, default_branch=repo.default_branch
-    )
+    remote_recipes = await discover_recipes_in_repo(repo.full_name, default_branch=repo.default_branch)
 
     await session.execute(delete(GitHubRecipe).where(GitHubRecipe.repo_id == repo.id))
 
@@ -328,7 +314,7 @@ async def sync_repo_recipes_to_cache(
             )
         )
 
-    repo.synced_at = datetime.now(timezone.utc)
+    repo.synced_at = datetime.now(UTC)
     await session.commit()
     logger.info("repo_recipes_synced", repo=repo.full_name, count=len(remote_recipes))
     return len(remote_recipes)

@@ -1,45 +1,44 @@
-"use client";
+'use client'
 
-import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
+import { useQuery } from '@tanstack/react-query'
+import { CheckCircle, FolderOpen, Package, Play } from 'lucide-react'
+import Link from 'next/link'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
+  type AutoPkgRunRead,
   api,
   type CatalogRead,
   type PaginatedResponse,
-  type AutoPkgRunRead,
-} from "@/lib/api";
-import { formatDate } from "@/lib/format";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Package, FolderOpen, Play, CheckCircle } from "lucide-react";
+} from '@/lib/api'
+import { formatDate } from '@/lib/format'
 
 export default function DashboardPage() {
   const { data: catalogs } = useQuery({
-    queryKey: ["catalogs"],
-    queryFn: () => api.get<CatalogRead[]>("/catalogs"),
-  });
+    queryKey: ['catalogs'],
+    queryFn: () => api.get<CatalogRead[]>('/catalogs'),
+  })
 
   const { data: runs } = useQuery({
-    queryKey: ["autopkg-runs-dash"],
+    queryKey: ['autopkg-runs-dash'],
     queryFn: () =>
-      api.get<PaginatedResponse<AutoPkgRunRead>>("/autopkg/runs?page_size=5"),
-  });
+      api.get<PaginatedResponse<AutoPkgRunRead>>('/autopkg/runs?page_size=5'),
+  })
 
   const { data: software } = useQuery({
-    queryKey: ["software-count"],
-    queryFn: () =>
-      api.get<PaginatedResponse<unknown>>("/pkginfo?page_size=1"),
-  });
+    queryKey: ['software-count'],
+    queryFn: () => api.get<PaginatedResponse<unknown>>('/pkginfo?page_size=1'),
+  })
 
   const { data: approvals } = useQuery({
-    queryKey: ["pending-approvals"],
-    queryFn: () => api.get<unknown[]>("/autopkg/approvals"),
-  });
+    queryKey: ['pending-approvals'],
+    queryFn: () => api.get<unknown[]>('/autopkg/approvals'),
+  })
 
-  const totalTitles = software?.total ?? 0;
-  const totalCatalogs = catalogs?.length ?? 0;
-  const lastRun = runs?.items?.[0];
-  const pendingApprovals = Array.isArray(approvals) ? approvals.length : 0;
+  const totalTitles = software?.total ?? 0
+  const totalCatalogs = catalogs?.length ?? 0
+  const lastRun = runs?.items?.[0]
+  const pendingApprovals = Array.isArray(approvals) ? approvals.length : 0
 
   return (
     <div className="space-y-6">
@@ -56,7 +55,7 @@ export default function DashboardPage() {
           <CardContent>
             <div
               className="text-2xl font-bold"
-              style={{ fontVariantNumeric: "tabular-nums" }}
+              style={{ fontVariantNumeric: 'tabular-nums' }}
             >
               {totalTitles}
             </div>
@@ -77,14 +76,13 @@ export default function DashboardPage() {
           <CardContent>
             <div
               className="text-2xl font-bold"
-              style={{ fontVariantNumeric: "tabular-nums" }}
+              style={{ fontVariantNumeric: 'tabular-nums' }}
             >
               {totalCatalogs}
             </div>
             <p className="text-xs text-muted-foreground">
-              {catalogs
-                ?.map((c) => `${c.name} (${c.item_count})`)
-                .join(", ") ?? "Loading..."}
+              {catalogs?.map((c) => `${c.name} (${c.item_count})`).join(', ') ??
+                'Loading...'}
             </p>
           </CardContent>
         </Card>
@@ -99,23 +97,23 @@ export default function DashboardPage() {
               {lastRun ? (
                 <Badge
                   variant={
-                    lastRun.status === "completed"
-                      ? "default"
-                      : lastRun.status === "failed"
-                        ? "destructive"
-                        : "secondary"
+                    lastRun.status === 'completed'
+                      ? 'default'
+                      : lastRun.status === 'failed'
+                        ? 'destructive'
+                        : 'secondary'
                   }
                 >
                   {lastRun.status}
                 </Badge>
               ) : (
-                "No runs"
+                'No runs'
               )}
             </div>
             <p className="text-xs text-muted-foreground">
               {lastRun
                 ? `${lastRun.recipes_imported ?? 0} imported, ${lastRun.recipes_failed ?? 0} failed`
-                : "No AutoPkg runs recorded"}
+                : 'No AutoPkg runs recorded'}
             </p>
           </CardContent>
         </Card>
@@ -133,7 +131,7 @@ export default function DashboardPage() {
           <CardContent>
             <div
               className="text-2xl font-bold"
-              style={{ fontVariantNumeric: "tabular-nums" }}
+              style={{ fontVariantNumeric: 'tabular-nums' }}
             >
               {pendingApprovals}
             </div>
@@ -161,11 +159,11 @@ export default function DashboardPage() {
                     <div>
                       <Badge
                         variant={
-                          run.status === "completed"
-                            ? "default"
-                            : run.status === "failed"
-                              ? "destructive"
-                              : "secondary"
+                          run.status === 'completed'
+                            ? 'default'
+                            : run.status === 'failed'
+                              ? 'destructive'
+                              : 'secondary'
                         }
                       >
                         {run.status}
@@ -210,7 +208,7 @@ export default function DashboardPage() {
                     </div>
                     <span
                       className="text-sm text-muted-foreground"
-                      style={{ fontVariantNumeric: "tabular-nums" }}
+                      style={{ fontVariantNumeric: 'tabular-nums' }}
                     >
                       {cat.item_count} items
                     </span>
@@ -218,13 +216,11 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                No catalogs yet
-              </p>
+              <p className="text-sm text-muted-foreground">No catalogs yet</p>
             )}
           </CardContent>
         </Card>
       </div>
     </div>
-  );
+  )
 }

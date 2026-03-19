@@ -194,3 +194,26 @@ class GitHubRecipeRead(BaseModel):
     url: str
 
     model_config = {"from_attributes": True}
+
+
+# ── Pkginfo ingestion schema ────────────────────────────────────────────
+
+
+class PkgInfoIngest(BaseModel):
+    """Accepts the full pkginfo plist content as a dict for ingestion."""
+
+    pkginfo: dict
+
+
+# ── Metadata cache schemas ───────────────────────────────────────────────
+
+
+class MetadataCacheRead(BaseModel):
+    cache_data: dict
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MetadataCacheWrite(BaseModel):
+    cache_data: dict

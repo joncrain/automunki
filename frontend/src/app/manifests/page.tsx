@@ -1,27 +1,27 @@
-"use client";
+'use client'
 
-import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
-import { api, type ManifestRead } from "@/lib/api";
-import { formatDateTime } from "@/lib/format";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { FileText, ArrowRight } from "lucide-react";
+import { useQuery } from '@tanstack/react-query'
+import { ArrowRight, FileText } from 'lucide-react'
+import Link from 'next/link'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
+import { api, type ManifestRead } from '@/lib/api'
+import { formatDateTime } from '@/lib/format'
 
 export default function ManifestsPage() {
   const { data: manifests, isLoading } = useQuery({
-    queryKey: ["manifests"],
-    queryFn: () => api.get<ManifestRead[]>("/manifests"),
-  });
+    queryKey: ['manifests'],
+    queryFn: () => api.get<ManifestRead[]>('/manifests'),
+  })
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
         Loading...
       </div>
-    );
+    )
   }
 
   return (
@@ -135,5 +135,5 @@ export default function ManifestsPage() {
         )}
       </div>
     </div>
-  );
+  )
 }

@@ -1,11 +1,20 @@
-"use client";
+'use client'
 
 import {
   type ColumnDef,
   flexRender,
   getCoreRowModel,
   useReactTable,
-} from "@tanstack/react-table";
+} from '@tanstack/react-table'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -13,30 +22,21 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+} from '@/components/ui/table'
 
 interface DataTableProps<TData, TValue> {
-  columns: ColumnDef<TData, TValue>[];
-  data: TData[];
-  pageCount?: number;
-  page?: number;
-  pageSize?: number;
-  total?: number;
-  onPageChange?: (page: number) => void;
-  onPageSizeChange?: (size: number) => void;
-  isLoading?: boolean;
+  columns: ColumnDef<TData, TValue>[]
+  data: TData[]
+  pageCount?: number
+  page?: number
+  pageSize?: number
+  total?: number
+  onPageChange?: (page: number) => void
+  onPageSizeChange?: (size: number) => void
+  isLoading?: boolean
 }
 
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
 export function DataTable<TData, TValue>({
   columns,
@@ -55,9 +55,9 @@ export function DataTable<TData, TValue>({
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
     pageCount,
-  });
+  })
 
-  const showFooter = onPageChange || total != null;
+  const showFooter = onPageChange || total != null
 
   return (
     <div className="flex h-full flex-col">
@@ -72,7 +72,7 @@ export function DataTable<TData, TValue>({
                       ? null
                       : flexRender(
                           header.column.columnDef.header,
-                          header.getContext()
+                          header.getContext(),
                         )}
                   </TableHead>
                 ))}
@@ -96,7 +96,7 @@ export function DataTable<TData, TValue>({
                     <TableCell key={cell.id}>
                       {flexRender(
                         cell.column.columnDef.cell,
-                        cell.getContext()
+                        cell.getContext(),
                       )}
                     </TableCell>
                   ))}
@@ -120,7 +120,7 @@ export function DataTable<TData, TValue>({
         <div className="flex items-center justify-between border-t px-2 py-3">
           <div
             className="text-sm text-muted-foreground"
-            style={{ fontVariantNumeric: "tabular-nums" }}
+            style={{ fontVariantNumeric: 'tabular-nums' }}
           >
             {total != null
               ? `Showing ${data.length} of ${total}`
@@ -163,7 +163,7 @@ export function DataTable<TData, TValue>({
                 </Button>
                 <span
                   className="text-sm text-muted-foreground"
-                  style={{ fontVariantNumeric: "tabular-nums" }}
+                  style={{ fontVariantNumeric: 'tabular-nums' }}
                 >
                   {page} / {pageCount}
                 </span>
@@ -183,5 +183,5 @@ export function DataTable<TData, TValue>({
         </div>
       )}
     </div>
-  );
+  )
 }

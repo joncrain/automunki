@@ -1,36 +1,36 @@
-"use client";
+'use client'
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
 import {
-  Package,
-  FileText,
-  FolderOpen,
-  Play,
   BookOpen,
   CheckCircle,
-  RefreshCw,
   ClipboardList,
-  Settings,
+  FileText,
+  FolderOpen,
   LayoutDashboard,
-} from "lucide-react";
+  Package,
+  Play,
+  RefreshCw,
+  Settings,
+} from 'lucide-react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/software", label: "Software", icon: Package },
-  { href: "/manifests", label: "Manifests", icon: FileText },
-  { href: "/catalogs", label: "Catalogs", icon: FolderOpen },
-  { href: "/autopkg/runs", label: "AutoPkg Runs", icon: Play },
-  { href: "/autopkg/recipes", label: "Recipes", icon: BookOpen },
-  { href: "/approvals", label: "Approvals", icon: CheckCircle },
-  { href: "/sync", label: "Sync", icon: RefreshCw },
-  { href: "/audit", label: "Audit Log", icon: ClipboardList },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/software', label: 'Software', icon: Package },
+  { href: '/manifests', label: 'Manifests', icon: FileText },
+  { href: '/catalogs', label: 'Catalogs', icon: FolderOpen },
+  { href: '/autopkg/runs', label: 'AutoPkg Runs', icon: Play },
+  { href: '/autopkg/recipes', label: 'Recipes', icon: BookOpen },
+  { href: '/approvals', label: 'Approvals', icon: CheckCircle },
+  { href: '/sync', label: 'Sync', icon: RefreshCw },
+  { href: '/audit', label: 'Audit Log', icon: ClipboardList },
+  { href: '/settings', label: 'Settings', icon: Settings },
+]
 
 export function Sidebar() {
-  const pathname = usePathname();
+  const pathname = usePathname()
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r bg-card">
@@ -44,24 +44,24 @@ export function Sidebar() {
         {navItems.map((item) => {
           const isActive =
             pathname === item.href ||
-            (item.href !== "/" && pathname.startsWith(item.href));
+            (item.href !== '/' && pathname.startsWith(item.href))
           return (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
               )}
             >
               <item.icon className="h-4 w-4" />
               {item.label}
             </Link>
-          );
+          )
         })}
       </nav>
     </aside>
-  );
+  )
 }

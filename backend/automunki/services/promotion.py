@@ -1,7 +1,7 @@
 """Promotion engine for moving pkginfo between catalogs."""
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from sqlalchemy import select
@@ -83,7 +83,7 @@ async def check_auto_promotions(session: AsyncSession) -> list[dict]:
     promoted = []
 
     for rule in rules:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=rule.auto_promote_days)
+        cutoff = datetime.now(UTC) - timedelta(days=rule.auto_promote_days)
         pkg_result = await session.execute(
             select(PkgInfo)
             .join(PkgInfoCatalog, PkgInfo.id == PkgInfoCatalog.pkg_info_id)

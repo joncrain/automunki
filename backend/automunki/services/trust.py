@@ -105,9 +105,7 @@ class GitHubRateLimitError(Exception):
     def __init__(self, reset_at: int | None = None):
         self.reset_at = reset_at
         super().__init__(
-            f"GitHub API rate limit exceeded (resets at {reset_at})"
-            if reset_at
-            else "GitHub API rate limit exceeded"
+            f"GitHub API rate limit exceeded (resets at {reset_at})" if reset_at else "GitHub API rate limit exceeded"
         )
 
 
@@ -121,9 +119,7 @@ class TrustVerificationResult:
 # ── Low-level GitHub helpers ──────────────────────────────────────────────
 
 
-async def _fetch_file_bytes(
-    repo: str, path: str, *, raise_on_rate_limit: bool = True
-) -> bytes | None:
+async def _fetch_file_bytes(repo: str, path: str, *, raise_on_rate_limit: bool = True) -> bytes | None:
     """Fetch raw file content from GitHub Contents API."""
     try:
         async with AsyncClient(timeout=30) as client:
@@ -410,9 +406,7 @@ def _extract_non_core_processors(recipe_data: dict) -> list[str]:
     return sorted(processors)
 
 
-async def _resolve_processor(
-    repo_full_name: str, processor_name: str
-) -> tuple[str, str] | None:
+async def _resolve_processor(repo_full_name: str, processor_name: str) -> tuple[str, str] | None:
     """Resolve a processor name to (repo, path)."""
     if "/" in processor_name:
         parts = processor_name.split("/")
@@ -508,9 +502,7 @@ async def _walk_recipe_chain(
         resolved = await _resolve_recipe(identifier, location_cache=location_cache)
 
         if not resolved and existing_trust_info:
-            old_entry = existing_trust_info.get("parent_recipes", {}).get(
-                identifier, {}
-            )
+            old_entry = existing_trust_info.get("parent_recipes", {}).get(identifier, {})
             if old_entry:
                 old_repo = old_entry.get("github_repo")
                 old_path = old_entry.get("github_path")
@@ -699,9 +691,7 @@ async def _compute_current_hashes(stored_trust_info: dict) -> dict:
     return current
 
 
-def _infer_github_location(
-    identifier: str, local_path: str
-) -> tuple[str | None, str | None]:
+def _infer_github_location(identifier: str, local_path: str) -> tuple[str | None, str | None]:
     """
     Infer github_repo and github_path from the local filesystem path
     stored by autopkg.
@@ -856,19 +846,34 @@ async def build_override_data(
     }
 
 
-def infer_repos_from_trust_info(trust_info: dict | None) -> list[str]:
+def _repo_from_identifier(identifier: str) -> str | None:
+    """Infer a GitHub repo full_name from a recipe identifier.
+
+    Handles the common ``com.github.autopkg.<user>.<type>.<name>`` convention
+    which maps to ``autopkg/<user>-recipes``.
     """
-    Extract the set of GitHub repos referenced in trust info.
-    Returns repo full_names like ["autopkg/wardsparadox-recipes"].
-    Useful for determining which repos need to be added to the runner.
+    parts = identifier.split(".")
+    if len(parts) >= 5 and parts[:3] == ["com", "github", "autopkg"]:
+        return f"autopkg/{parts[3]}-recipes"
+    return None
+
+
+def infer_repos_from_trust_info(trust_info: dict | None) -> list[str]:
+    """Extract the set of GitHub repos referenced in trust info.
+
+    Checks each entry for an explicit ``github_repo`` field first, then
+    falls back to parsing the recipe identifier key for the standard
+    ``com.github.autopkg.<user>`` convention.
+
+    Returns repo full_names like ``["autopkg/wardsparadox-recipes"]``.
     """
     repos: set[str] = set()
     if not trust_info:
         return []
-    for entry in trust_info.get("parent_recipes", {}).values():
-        if isinstance(entry, dict) and entry.get("github_repo"):
-            repos.add(entry["github_repo"])
-    for entry in trust_info.get("non_core_processors", {}).values():
-        if isinstance(entry, dict) and entry.get("github_repo"):
-            repos.add(entry["github_repo"])
+    for section in ("parent_recipes", "non_core_processors"):
+        for identifier, entry in trust_info.get(section, {}).items():
+            if isinstance(entry, dict) and entry.get("github_repo"):
+                repos.add(entry["github_repo"])
+            elif repo := _repo_from_identifier(identifier):
+                repos.add(repo)
     return sorted(repos)

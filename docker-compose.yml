@@ -28,6 +28,7 @@ services:
       DEBUG: ${DEBUG:-false}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_REPO: ${GITHUB_REPO:-}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_REGION: ${AWS_REGION:-us-east-1}
@@ -35,8 +36,8 @@ services:
       CLOUDFRONT_DISTRIBUTION_ID: ${CLOUDFRONT_DISTRIBUTION_ID:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       CORS_ORIGINS: '["http://localhost:3000"]'
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
 
   frontend:
     build: ./frontend
@@ -44,7 +45,7 @@ services:
     depends_on:
       - backend
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      BACKEND_URL: http://backend:8000
     ports:
       - "3000:3000"
 

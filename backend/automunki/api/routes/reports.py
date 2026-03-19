@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -21,12 +21,10 @@ async def client_checkin(
     if not serial:
         return {"error": "serial_number required"}
 
-    result = await session.execute(
-        select(ClientMachine).where(ClientMachine.serial_number == serial)
-    )
+    result = await session.execute(select(ClientMachine).where(ClientMachine.serial_number == serial))
     machine = result.scalar_one_or_none()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if machine:
         machine.hostname = data.get("hostname", machine.hostname)
@@ -38,13 +36,9 @@ async def client_checkin(
         machine.disk_free_gb = data.get("disk_free_gb", machine.disk_free_gb)
         machine.munki_version = data.get("munki_version", machine.munki_version)
         machine.manifest_name = data.get("manifest_name", machine.manifest_name)
-        machine.client_identifier = data.get(
-            "client_identifier", machine.client_identifier
-        )
+        machine.client_identifier = data.get("client_identifier", machine.client_identifier)
         machine.hardware_info = data.get("hardware_info", machine.hardware_info)
-        machine.installed_software = data.get(
-            "installed_software", machine.installed_software
-        )
+        machine.installed_software = data.get("installed_software", machine.installed_software)
         machine.last_checkin_at = now
     else:
         machine = ClientMachine(
@@ -92,18 +86,13 @@ async def list_machines(
     query = select(ClientMachine)
     if search:
         query = query.where(
-            ClientMachine.hostname.ilike(f"%{search}%")
-            | ClientMachine.serial_number.ilike(f"%{search}%")
+            ClientMachine.hostname.ilike(f"%{search}%") | ClientMachine.serial_number.ilike(f"%{search}%")
         )
 
-    count = (
-        await session.execute(select(func.count()).select_from(query.subquery()))
-    ).scalar() or 0
+    count = (await session.execute(select(func.count()).select_from(query.subquery()))).scalar() or 0
 
     result = await session.execute(
-        query.order_by(ClientMachine.last_checkin_at.desc().nullslast())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        query.order_by(ClientMachine.last_checkin_at.desc().nullslast()).offset((page - 1) * page_size).limit(page_size)
     )
     machines = result.scalars().all()
 
@@ -117,9 +106,7 @@ async def list_machines(
                 "machine_model": m.machine_model,
                 "munki_version": m.munki_version,
                 "manifest_name": m.manifest_name,
-                "last_checkin_at": m.last_checkin_at.isoformat()
-                if m.last_checkin_at
-                else None,
+                "last_checkin_at": m.last_checkin_at.isoformat() if m.last_checkin_at else None,
                 "disk_free_gb": m.disk_free_gb,
             }
             for m in machines
@@ -138,9 +125,7 @@ async def get_machine(
 ):
     import uuid
 
-    result = await session.execute(
-        select(ClientMachine).where(ClientMachine.id == uuid.UUID(machine_id))
-    )
+    result = await session.execute(select(ClientMachine).where(ClientMachine.id == uuid.UUID(machine_id)))
     machine = result.scalar_one_or_none()
     if not machine:
         from fastapi import HTTPException
@@ -170,12 +155,8 @@ async def get_machine(
         "client_identifier": machine.client_identifier,
         "hardware_info": machine.hardware_info,
         "installed_software": machine.installed_software,
-        "last_checkin_at": machine.last_checkin_at.isoformat()
-        if machine.last_checkin_at
-        else None,
-        "first_checkin_at": machine.first_checkin_at.isoformat()
-        if machine.first_checkin_at
-        else None,
+        "last_checkin_at": machine.last_checkin_at.isoformat() if machine.last_checkin_at else None,
+        "first_checkin_at": machine.first_checkin_at.isoformat() if machine.first_checkin_at else None,
         "install_reports": [
             {
                 "id": str(r.id),
@@ -195,27 +176,21 @@ async def compliance_overview(
     session: AsyncSession = Depends(get_session),
 ):
     """Fleet compliance overview."""
-    total = (
-        await session.execute(select(func.count()).select_from(ClientMachine))
-    ).scalar() or 0
+    total = (await session.execute(select(func.count()).select_from(ClientMachine))).scalar() or 0
 
     from datetime import timedelta
 
-    recent_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    recent_cutoff = datetime.now(UTC) - timedelta(days=7)
     recent = (
         await session.execute(
-            select(func.count())
-            .select_from(ClientMachine)
-            .where(ClientMachine.last_checkin_at >= recent_cutoff)
+            select(func.count()).select_from(ClientMachine).where(ClientMachine.last_checkin_at >= recent_cutoff)
         )
     ).scalar() or 0
 
-    stale_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    stale_cutoff = datetime.now(UTC) - timedelta(days=30)
     stale = (
         await session.execute(
-            select(func.count())
-            .select_from(ClientMachine)
-            .where(ClientMachine.last_checkin_at < stale_cutoff)
+            select(func.count()).select_from(ClientMachine).where(ClientMachine.last_checkin_at < stale_cutoff)
         )
     ).scalar() or 0
 

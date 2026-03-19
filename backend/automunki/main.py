@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from automunki.api.routes.audit import router as audit_router
 from automunki.api.routes.auth import router as auth_router
@@ -14,6 +15,7 @@ from automunki.api.routes.pkginfo import router as pkginfo_router
 from automunki.api.routes.reports import router as reports_router
 from automunki.api.routes.sync import router as sync_router
 from automunki.core.config import settings
+from automunki.core.middleware import RequestIDMiddleware
 
 structlog.configure(
     processors=[
@@ -22,9 +24,7 @@ structlog.configure(
         structlog.processors.StackInfoRenderer(),
         structlog.dev.set_exc_info,
         structlog.processors.TimeStamper(fmt="iso"),
-        structlog.dev.ConsoleRenderer()
-        if settings.debug
-        else structlog.processors.JSONRenderer(),
+        structlog.dev.ConsoleRenderer() if settings.debug else structlog.processors.JSONRenderer(),
     ],
     wrapper_class=structlog.make_filtering_bound_logger(0),
     context_class=dict,
@@ -51,11 +51,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-from prometheus_fastapi_instrumentator import Instrumentator
-
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
-
-from automunki.core.middleware import RequestIDMiddleware
 
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from automunki.models.base import Base
 
 
-class UserRole(str, enum.Enum):
+class UserRole(enum.StrEnum):
     admin = "admin"
     editor = "editor"
     viewer = "viewer"
@@ -23,9 +23,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         nullable=False,
         default=UserRole.viewer,
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
