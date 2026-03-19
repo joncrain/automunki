@@ -68,15 +68,7 @@ jobs:
           echo "Fetching metadata cache from ${API_BASE}/metadata-cache"
           HTTP_CODE=$(curl -s -o metadata_cache_response.json -w "%{http_code}" "${API_BASE}/metadata-cache")
           if [ "$HTTP_CODE" = "200" ]; then
-            python3 -c "
-          import json, sys
-          with open('metadata_cache_response.json') as f:
-              resp = json.load(f)
-          cache = resp.get('cache_data', {})
-          with open('metadata_cache.json', 'w') as f:
-              json.dump(cache, f, indent=4)
-          print(f'Loaded metadata cache with {len(cache)} entries')
-          "
+            python3 AutoPkg/scripts/load_metadata_cache.py
           else
             echo "No metadata cache found (HTTP ${HTTP_CODE}), starting fresh"
             echo '{}' > metadata_cache.json
@@ -104,40 +96,7 @@ jobs:
 
       - name: Write override files and repo list from API config
         if: steps.run_config.outputs.has_config == 'true'
-        run: |
-          python3 << 'PYEOF'
-          import json
-          import os
-          import plistlib
-
-          with open("run_config.json") as f:
-              config = json.load(f)
-
-          override_dir = os.path.join(os.environ["GITHUB_WORKSPACE"], "AutoPkg", "Overrides")
-          os.makedirs(override_dir, exist_ok=True)
-
-          recipe_names = []
-          for override in config.get("overrides", []):
-              name = override["name"]
-              plist_data = override.get("plist", {})
-              filename = f"{name}.munki.recipe"
-              filepath = os.path.join(override_dir, filename)
-
-              with open(filepath, "wb") as f:
-                  plistlib.dump(plist_data, f)
-              print(f"Wrote override: {filepath}")
-              recipe_names.append(filename)
-
-          with open("AutoPkg/run_recipe_list.json", "w") as f:
-              json.dump(recipe_names, f)
-          print(f"Recipe list: {recipe_names}")
-
-          repos = config.get("repos", [])
-          with open("AutoPkg/run_repo_list.txt", "w") as f:
-              for repo in repos:
-                  f.write(repo + "\n")
-          print(f"Repo list ({len(repos)} repos): {repos}")
-          PYEOF
+        run: python3 AutoPkg/scripts/write_overrides.py
 
       - name: Add AutoPkg repos
         run: |
@@ -175,28 +134,7 @@ jobs:
             echo "No metadata cache file found, skipping"
             exit 0
           fi
-          API_BASE="${API_BASE_URL}/api/v1/autopkg"
-          python3 << 'PYEOF'
-          import json, os, urllib.request
-
-          api_base = os.environ["API_BASE_URL"] + "/api/v1/autopkg"
-
-          with open("metadata_cache.json") as f:
-              cache = json.load(f)
-
-          payload = json.dumps({"cache_data": cache}).encode()
-          req = urllib.request.Request(
-              f"{api_base}/metadata-cache",
-              data=payload,
-              headers={"Content-Type": "application/json"},
-              method="PUT",
-          )
-          try:
-              with urllib.request.urlopen(req, timeout=30) as resp:
-                  print(f"Saved metadata cache ({resp.status})")
-          except Exception as e:
-              print(f"Failed to save metadata cache: {e}")
-          PYEOF
+          python3 AutoPkg/scripts/save_metadata_cache.py
 
       - name: Report results and ingest pkginfo
         if: always() && github.event.inputs.run_id != '' && github.event.inputs.api_url != ''
@@ -217,120 +155,7 @@ jobs:
           for report in "$REPORT_DIR"/*.plist; do
             [ -f "$report" ] || continue
             echo "Processing report: $report"
-
-            REPORT_FILE="$report" PKGSINFO_DIR="$PKGSINFO_DIR" python3 << 'PYEOF'
-          import json
-          import os
-          import plistlib
-          import urllib.request
-          from datetime import date, datetime
-
-          def make_serializable(obj):
-              if isinstance(obj, (datetime, date)):
-                  return obj.isoformat()
-              if isinstance(obj, bytes):
-                  return obj.hex()
-              if isinstance(obj, dict):
-                  return {k: make_serializable(v) for k, v in obj.items()}
-              if isinstance(obj, (list, tuple)):
-                  return [make_serializable(v) for v in obj]
-              return obj
-
-          api_base = os.environ["API_BASE_URL"] + "/api/v1/autopkg"
-          run_id = os.environ["RUN_ID"]
-          report_path = os.environ.get("REPORT_FILE", "")
-          pkgsinfo_dir = os.environ.get("PKGSINFO_DIR", "")
-
-          if not report_path or not os.path.exists(report_path):
-              print(f"Report not found: {report_path}")
-              raise SystemExit(0)
-
-          with open(report_path, "rb") as f:
-              report = plistlib.load(f)
-
-          failures = report.get("failures", [])
-          summary = report.get("summary_results", {})
-          munki_summary = summary.get("munki_importer_summary_result", {})
-          imported_items = munki_summary.get("data_rows", [])
-
-          recipe_name = os.path.basename(report_path).replace(".plist", "")
-          identifier = f"local.munki.{recipe_name}"
-
-
-          def post_json(url, payload):
-              data = json.dumps(payload).encode()
-              req = urllib.request.Request(
-                  url, data=data,
-                  headers={"Content-Type": "application/json"},
-                  method="POST",
-              )
-              try:
-                  with urllib.request.urlopen(req, timeout=30) as resp:
-                      return json.loads(resp.read().decode()), resp.status
-              except Exception as e:
-                  print(f"  POST {url} failed: {e}")
-                  return None, 0
-
-
-          if imported_items:
-              for item in imported_items:
-                  catalogs = item.get("catalogs", "")
-                  if isinstance(catalogs, str):
-                      catalogs = [c.strip() for c in catalogs.split(",") if c.strip()]
-
-                  result_payload = {
-                      "recipe_identifier": identifier,
-                      "recipe_name": recipe_name,
-                      "status": "imported",
-                      "imported_version": item.get("version"),
-                      "imported_pkg_path": item.get("pkg_repo_path"),
-                      "imported_pkginfo_path": item.get("pkginfo_path"),
-                      "imported_catalogs": catalogs,
-                  }
-                  resp_body, status = post_json(
-                      f"{api_base}/runs/{run_id}/results", result_payload
-                  )
-                  print(f"  Reported imported: {item.get('name')} {item.get('version')} ({status})")
-
-                  pkginfo_path = item.get("pkginfo_path", "")
-                  if pkginfo_path and pkgsinfo_dir:
-                      full_path = os.path.join(pkgsinfo_dir, pkginfo_path)
-                      if os.path.exists(full_path):
-                      with open(full_path, "rb") as pf:
-                          pkginfo_dict = plistlib.load(pf)
-                      serializable = make_serializable(pkginfo_dict)
-                      resp_body, status = post_json(
-                              f"{api_base}/pkginfo/ingest",
-                              {"pkginfo": serializable},
-                          )
-                          if resp_body and resp_body.get("skipped"):
-                              print(f"  Pkginfo already in DB: {item.get('name')} {item.get('version')}")
-                          elif status == 200:
-                              print(f"  Ingested pkginfo: {item.get('name')} {item.get('version')}")
-                          else:
-                              print(f"  Pkginfo ingest response: {resp_body}")
-                      else:
-                          print(f"  Pkginfo file not found at {full_path}")
-
-          elif failures:
-              error_msg = "; ".join(
-                  f.get("message", "") for f in failures if isinstance(f, dict)
-              )
-              post_json(f"{api_base}/runs/{run_id}/results", {
-                  "recipe_identifier": identifier,
-                  "recipe_name": recipe_name,
-                  "status": "failed",
-                  "error_message": error_msg,
-              })
-              print(f"  Reported failed: {recipe_name}")
-          else:
-              post_json(f"{api_base}/runs/{run_id}/results", {
-                  "recipe_identifier": identifier,
-                  "recipe_name": recipe_name,
-                  "status": "no_change",
-              })
-              print(f"  Reported no_change: {recipe_name}")
-          PYEOF
+            REPORT_FILE="$report" PKGSINFO_DIR="$PKGSINFO_DIR" python3 AutoPkg/scripts/report_results.py
           done
 
           echo "Marking run complete"
