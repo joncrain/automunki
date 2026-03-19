@@ -14,7 +14,7 @@ on:
         required: false
 
 env:
-  BACKEND_URL: "https://f95c-107-181-205-9.ngrok-free.app"
+  BACKEND_URL: "https://cc00-107-181-205-9.ngrok-free.app"
 
 jobs:
   autopkg-run:
