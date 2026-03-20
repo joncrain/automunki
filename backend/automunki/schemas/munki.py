@@ -112,6 +112,10 @@ class PkgInfoSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CatalogAssignment(BaseModel):
+    catalog_names: list[str]
+
+
 class PromoteRequest(BaseModel):
     target_catalog_id: UUID
 

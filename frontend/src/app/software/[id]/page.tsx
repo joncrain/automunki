@@ -1,10 +1,11 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Pencil, Save, X } from 'lucide-react'
+import { Download, Pencil, Plus, Save, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import {
   Breadcrumb,
@@ -16,13 +17,31 @@ import {
 } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { type AuditLogRead, api, type PkgInfoDetail } from '@/lib/api'
-import { avatarColor, formatDateTime, initials } from '@/lib/format'
+import {
+  type AuditLogRead,
+  api,
+  type CatalogRead,
+  type PkgInfoDetail,
+} from '@/lib/api'
+import { formatDateTime } from '@/lib/format'
 
 interface EditableFields {
   display_name: string
@@ -209,11 +228,12 @@ export default function SoftwareDetailPage() {
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div
-            className={`flex h-12 w-12 items-center justify-center rounded-lg text-lg font-bold ${avatarColor(pkg.name)}`}
-          >
-            {initials(pkg.display_name || pkg.name)}
-          </div>
+          <SoftwareIcon
+            name={pkg.name}
+            displayName={pkg.display_name}
+            iconName={pkg.icon_name}
+            size="lg"
+          />
           <div>
             <h1 className="text-3xl font-bold">
               {pkg.display_name || pkg.name}
@@ -224,11 +244,7 @@ export default function SoftwareDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {pkg.catalog_names.map((c) => (
-            <Badge key={c} variant="secondary" className="text-sm">
-              {c}
-            </Badge>
-          ))}
+          <CatalogEditor pkgId={id} catalogNames={pkg.catalog_names} />
           <Button
             variant="outline"
             size="sm"
@@ -713,5 +729,103 @@ function ScriptCard({ title, script }: { title: string; script: string }) {
         </pre>
       </CardContent>
     </Card>
+  )
+}
+
+function CatalogEditor({
+  pkgId,
+  catalogNames,
+}: {
+  pkgId: string
+  catalogNames: string[]
+}) {
+  const queryClient = useQueryClient()
+  const [popoverOpen, setPopoverOpen] = useState(false)
+
+  const { data: allCatalogs } = useQuery({
+    queryKey: ['catalogs'],
+    queryFn: () => api.get<CatalogRead[]>('/catalogs'),
+    enabled: popoverOpen,
+  })
+
+  const mutation = useMutation({
+    mutationFn: (names: string[]) =>
+      api.put(`/pkginfo/${pkgId}/catalogs`, { catalog_names: names }),
+    onSuccess: () => {
+      toast.success('Catalogs updated')
+      queryClient.invalidateQueries({ queryKey: ['pkginfo', pkgId] })
+      queryClient.invalidateQueries({ queryKey: ['catalogs'] })
+    },
+    onError: (err: Error) =>
+      toast.error(`Failed to update catalogs: ${err.message}`),
+  })
+
+  const removeCatalog = (name: string) => {
+    mutation.mutate(catalogNames.filter((c) => c !== name))
+  }
+
+  const addCatalog = (name: string) => {
+    if (catalogNames.includes(name)) return
+    mutation.mutate([...catalogNames, name])
+    setPopoverOpen(false)
+  }
+
+  const available = (allCatalogs ?? []).filter(
+    (c) => !catalogNames.includes(c.name),
+  )
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {catalogNames.map((c) => (
+        <Badge key={c} variant="secondary" className="gap-1 pr-1 text-sm">
+          {c}
+          <button
+            type="button"
+            aria-label={`Remove catalog ${c}`}
+            className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+            onClick={() => removeCatalog(c)}
+            disabled={mutation.isPending}
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </Badge>
+      ))}
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-6 w-6"
+            aria-label="Add catalog"
+          >
+            <Plus className="h-3 w-3" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[250px] p-0" align="end">
+          <Command>
+            <CommandInput placeholder="Search catalogs..." />
+            <CommandList>
+              <CommandEmpty>No catalogs available.</CommandEmpty>
+              <CommandGroup>
+                {available.map((cat) => (
+                  <CommandItem
+                    key={cat.id}
+                    value={cat.name}
+                    onSelect={() => addCatalog(cat.name)}
+                  >
+                    {cat.name}
+                    {cat.is_production && (
+                      <Badge variant="default" className="ml-auto text-xs">
+                        Production
+                      </Badge>
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
   )
 }

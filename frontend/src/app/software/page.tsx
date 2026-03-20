@@ -6,6 +6,7 @@ import { Search, X } from 'lucide-react'
 import Link from 'next/link'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
 import { DataTable } from '@/components/data-table'
+import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,7 +23,7 @@ import {
   type PaginatedResponse,
   type PkgInfoSummary,
 } from '@/lib/api'
-import { avatarColor, formatDate, initials } from '@/lib/format'
+import { formatDate } from '@/lib/format'
 
 const columns: ColumnDef<PkgInfoSummary>[] = [
   {
@@ -33,11 +34,11 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
         href={`/software/${row.original.id}`}
         className="flex items-center gap-3 font-medium hover:underline"
       >
-        <div
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-bold ${avatarColor(row.original.name)}`}
-        >
-          {initials(row.original.display_name || row.original.name)}
-        </div>
+        <SoftwareIcon
+          name={row.original.name}
+          displayName={row.original.display_name}
+          size="sm"
+        />
         <span className="truncate">
           {row.original.display_name || row.original.name}
         </span>

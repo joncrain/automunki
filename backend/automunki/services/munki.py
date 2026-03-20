@@ -1,12 +1,15 @@
 """Munki plist generation and catalog compilation service."""
 
 import plistlib
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from automunki.models.munki import (
+    Catalog,
+    Icon,
     Manifest,
     ManifestCatalog,
     ManifestInclusion,
@@ -16,7 +19,12 @@ from automunki.models.munki import (
 
 
 async def compile_catalog_plist(session: AsyncSession, catalog_id) -> bytes:
-    """Generate a Munki catalog plist from all PkgInfo entries in a catalog."""
+    """Generate a Munki catalog plist from all PkgInfo entries in a catalog.
+
+    Matches the behaviour of Munki's ``makecatalogs``: ``notes`` and all
+    keys starting with ``_`` (e.g. ``_metadata``) are stripped from each
+    pkginfo dict before the catalog is written.
+    """
     result = await session.execute(
         select(PkgInfo)
         .join(PkgInfoCatalog, PkgInfo.id == PkgInfoCatalog.pkg_info_id)
@@ -28,9 +36,9 @@ async def compile_catalog_plist(session: AsyncSession, catalog_id) -> bytes:
     catalog_items = []
     for pkg in pkg_infos:
         if pkg.raw_plist:
-            catalog_items.append(pkg.raw_plist)
+            catalog_items.append(_strip_catalog_keys(dict(pkg.raw_plist)))
         else:
-            catalog_items.append(_pkginfo_to_dict(pkg))
+            catalog_items.append(_pkginfo_to_dict(pkg, for_catalog=True))
 
     return plistlib.dumps(catalog_items)
 
@@ -42,9 +50,7 @@ async def compile_manifest_plist(session: AsyncSession, manifest_id) -> bytes:
         .options(
             selectinload(Manifest.catalog_refs).selectinload(ManifestCatalog.catalog),
             selectinload(Manifest.items),
-            selectinload(Manifest.included_manifests).selectinload(
-                ManifestInclusion.child
-            ),
+            selectinload(Manifest.included_manifests).selectinload(ManifestInclusion.child),
         )
         .where(Manifest.id == manifest_id)
     )
@@ -88,8 +94,24 @@ async def compile_pkginfo_plist(pkg_info: PkgInfo) -> bytes:
     return plistlib.dumps(_pkginfo_to_dict(pkg_info))
 
 
-def _pkginfo_to_dict(pkg: PkgInfo) -> dict:
-    """Convert a PkgInfo model to a plist-compatible dict."""
+def _strip_catalog_keys(d: dict) -> dict:
+    """Remove ``notes`` and underscore-prefixed keys from a pkginfo dict.
+
+    This mirrors what Munki's ``makecatalogs`` does before writing each
+    pkginfo entry into a catalog file.
+    """
+    d.pop("notes", None)
+    for key in [k for k in d if k.startswith("_")]:
+        del d[key]
+    return d
+
+
+def _pkginfo_to_dict(pkg: PkgInfo, *, for_catalog: bool = False) -> dict:
+    """Convert a PkgInfo model to a plist-compatible dict.
+
+    When *for_catalog* is True the output matches what Munki clients
+    expect inside a catalog (no ``notes``, no ``_metadata``).
+    """
     d: dict = {
         "name": pkg.name,
         "version": pkg.version,
@@ -150,7 +172,43 @@ def _pkginfo_to_dict(pkg: PkgInfo) -> dict:
     if pkg.catalogs:
         d["catalogs"] = [c.name for c in pkg.catalogs]
 
-    if pkg.metadata_:
+    if not for_catalog and pkg.metadata_:
         d["_metadata"] = pkg.metadata_
 
     return d
+
+
+async def get_catalog_by_name(session: AsyncSession, catalog_name: str) -> Catalog | None:
+    """Look up a Catalog by its unique name."""
+    result = await session.execute(select(Catalog).where(Catalog.name == catalog_name))
+    return result.scalar_one_or_none()
+
+
+async def get_catalog_last_modified(session: AsyncSession, catalog_id) -> datetime | None:
+    """Return the most recent updated_at of any PkgInfo in a catalog."""
+    result = await session.execute(
+        select(func.max(PkgInfo.updated_at))
+        .join(PkgInfoCatalog, PkgInfo.id == PkgInfoCatalog.pkg_info_id)
+        .where(PkgInfoCatalog.catalog_id == catalog_id)
+        .where(PkgInfo.is_deleted.is_(False))
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_manifest_by_name(session: AsyncSession, manifest_name: str) -> Manifest | None:
+    """Look up a Manifest by its unique name."""
+    result = await session.execute(select(Manifest).where(Manifest.name == manifest_name))
+    return result.scalar_one_or_none()
+
+
+async def compile_icon_hashes_plist(session: AsyncSession) -> bytes:
+    """Generate the _icon_hashes.plist used by Munki to check icon freshness."""
+    result = await session.execute(select(Icon))
+    icons = result.scalars().all()
+
+    hashes: dict[str, str] = {}
+    for icon in icons:
+        if icon.name and icon.s3_path:
+            hashes[icon.name] = icon.s3_path
+
+    return plistlib.dumps(hashes)

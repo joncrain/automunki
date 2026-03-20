@@ -12,6 +12,7 @@ from automunki.api.routes.autopkg import router as autopkg_router
 from automunki.api.routes.catalogs import router as catalogs_router
 from automunki.api.routes.manifests import router as manifests_router
 from automunki.api.routes.pkginfo import router as pkginfo_router
+from automunki.api.routes.repo import router as repo_router
 from automunki.api.routes.reports import router as reports_router
 from automunki.api.routes.sync import router as sync_router
 from automunki.core.config import settings
@@ -72,6 +73,8 @@ app.include_router(autopkg_router, prefix=api_prefix)
 app.include_router(sync_router, prefix=api_prefix)
 app.include_router(reports_router, prefix=api_prefix)
 app.include_router(audit_router, prefix=api_prefix)
+
+app.include_router(repo_router)
 
 
 @app.get("/health")

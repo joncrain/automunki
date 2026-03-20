@@ -11,6 +11,7 @@ from automunki.models.munki import Catalog, PkgInfo, PkgInfoCatalog
 from automunki.models.user import User
 from automunki.schemas.common import PaginatedResponse
 from automunki.schemas.munki import (
+    CatalogAssignment,
     PkgInfoRead,
     PkgInfoSummary,
     PkgInfoUpdate,
@@ -96,10 +97,7 @@ async def list_pkginfo(
     query = select(PkgInfo).where(PkgInfo.is_deleted.is_(False))
 
     if search:
-        query = query.where(
-            PkgInfo.name.ilike(f"%{search}%")
-            | PkgInfo.display_name.ilike(f"%{search}%")
-        )
+        query = query.where(PkgInfo.name.ilike(f"%{search}%") | PkgInfo.display_name.ilike(f"%{search}%"))
     if category:
         query = query.where(PkgInfo.category == category)
     if name:
@@ -132,11 +130,7 @@ async def get_pkginfo(
     pkg_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ):
-    result = await session.execute(
-        select(PkgInfo)
-        .options(selectinload(PkgInfo.catalogs))
-        .where(PkgInfo.id == pkg_id)
-    )
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
     pkg = result.scalar_one_or_none()
     if not pkg:
         raise HTTPException(status_code=404, detail="PkgInfo not found")
@@ -148,11 +142,7 @@ async def get_pkginfo_plist(
     pkg_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ):
-    result = await session.execute(
-        select(PkgInfo)
-        .options(selectinload(PkgInfo.catalogs))
-        .where(PkgInfo.id == pkg_id)
-    )
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
     pkg = result.scalar_one_or_none()
     if not pkg:
         raise HTTPException(status_code=404, detail="PkgInfo not found")
@@ -167,11 +157,7 @@ async def update_pkginfo(
     session: AsyncSession = Depends(get_session),
     user: User | None = Depends(current_optional_user),
 ):
-    result = await session.execute(
-        select(PkgInfo)
-        .options(selectinload(PkgInfo.catalogs))
-        .where(PkgInfo.id == pkg_id)
-    )
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
     pkg = result.scalar_one_or_none()
     if not pkg:
         raise HTTPException(status_code=404, detail="PkgInfo not found")
@@ -221,6 +207,47 @@ async def delete_pkginfo(
     )
     await session.commit()
     return {"message": "PkgInfo deleted"}
+
+
+@router.put("/{pkg_id}/catalogs", response_model=PkgInfoRead)
+async def update_pkginfo_catalogs(
+    pkg_id: uuid.UUID,
+    data: CatalogAssignment,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
+    pkg = result.scalar_one_or_none()
+    if not pkg:
+        raise HTTPException(status_code=404, detail="PkgInfo not found")
+
+    before_names = [c.name for c in pkg.catalogs]
+
+    await session.execute(PkgInfoCatalog.__table__.delete().where(PkgInfoCatalog.pkg_info_id == pkg_id))
+    await session.flush()
+
+    for cat_name in data.catalog_names:
+        cat_result = await session.execute(select(Catalog).where(Catalog.name == cat_name))
+        cat = cat_result.scalar_one_or_none()
+        if cat:
+            session.add(PkgInfoCatalog(pkg_info_id=pkg_id, catalog_id=cat.id))
+
+    await create_audit_entry(
+        session,
+        action="update",
+        entity_type="pkg_info",
+        entity_id=str(pkg_id),
+        entity_name=f"{pkg.name} {pkg.version}",
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+        changes={"catalog_names": {"before": before_names, "after": data.catalog_names}},
+    )
+
+    await session.commit()
+    await session.refresh(pkg)
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
+    pkg = result.scalar_one_or_none()
+    return PkgInfoRead(**_to_read(pkg))
 
 
 @router.post("/{pkg_id}/promote")

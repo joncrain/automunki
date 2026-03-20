@@ -59,7 +59,7 @@ export default function SyncPage() {
         </Button>
       </div>
 
-      <Card className="border-l-4 border-l-blue-500/40">
+      <Card className="border-l-4 border-l-gruvbox-blue/40">
         <CardHeader>
           <CardTitle>Current Status</CardTitle>
         </CardHeader>

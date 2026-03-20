@@ -4,9 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from automunki.api.deps import get_session
 from automunki.core.security import current_optional_user
-from automunki.models.munki import SyncJob, SyncStatus
+from automunki.models.munki import Catalog, PkgInfo, PkgInfoCatalog, SyncJob, SyncStatus
 from automunki.models.user import User
 from automunki.services.audit import create_audit_entry
+from automunki.services.munki import compile_catalog_plist
 from automunki.services.s3 import dispatch_repo_sync_workflow
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -47,9 +48,7 @@ async def trigger_sync(
 
 @router.get("/status")
 async def sync_status(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(
-        select(SyncJob).order_by(SyncJob.created_at.desc()).limit(1)
-    )
+    result = await session.execute(select(SyncJob).order_by(SyncJob.created_at.desc()).limit(1))
     job = result.scalar_one_or_none()
     if not job:
         return {"status": "no_syncs"}
@@ -70,15 +69,10 @@ async def sync_history(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    count = (
-        await session.execute(select(func.count()).select_from(SyncJob))
-    ).scalar() or 0
+    count = (await session.execute(select(func.count()).select_from(SyncJob))).scalar() or 0
 
     result = await session.execute(
-        select(SyncJob)
-        .order_by(SyncJob.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        select(SyncJob).order_by(SyncJob.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     )
     jobs = result.scalars().all()
 
@@ -100,4 +94,77 @@ async def sync_history(
         "total": count,
         "page": page,
         "page_size": page_size,
+    }
+
+
+@router.post("/makecatalogs")
+async def makecatalogs(
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    """Rebuild all Munki catalogs from pkginfo in the database.
+
+    This is the DB-backed equivalent of Munki's ``makecatalogs`` command.
+    Since AutoMunki compiles catalogs on the fly when Munki clients
+    request them, this endpoint serves as a verification tool that
+    previews what each catalog contains and reports any warnings.
+    """
+    catalogs_result = await session.execute(select(Catalog).order_by(Catalog.sort_order))
+    catalogs = catalogs_result.scalars().all()
+
+    warnings: list[str] = []
+    catalog_summary: list[dict] = []
+
+    for cat in catalogs:
+        count_result = await session.execute(
+            select(func.count())
+            .select_from(PkgInfoCatalog)
+            .join(PkgInfo, PkgInfo.id == PkgInfoCatalog.pkg_info_id)
+            .where(
+                PkgInfoCatalog.catalog_id == cat.id,
+                PkgInfo.is_deleted.is_(False),
+            )
+        )
+        item_count = count_result.scalar() or 0
+
+        if item_count == 0:
+            warnings.append(f"Catalog '{cat.name}' is empty")
+
+        missing_location = await session.execute(
+            select(PkgInfo.name, PkgInfo.version)
+            .join(PkgInfoCatalog, PkgInfo.id == PkgInfoCatalog.pkg_info_id)
+            .where(
+                PkgInfoCatalog.catalog_id == cat.id,
+                PkgInfo.is_deleted.is_(False),
+                PkgInfo.installer_item_location.is_(None),
+                PkgInfo.installer_type.notin_(["nopkg", "apple_update_metadata"]),
+            )
+        )
+        for name, version in missing_location.all():
+            warnings.append(f"{name}-{version} in '{cat.name}' is missing installer_item_location")
+
+        plist_bytes = await compile_catalog_plist(session, cat.id)
+
+        catalog_summary.append(
+            {
+                "name": cat.name,
+                "item_count": item_count,
+                "plist_bytes": len(plist_bytes),
+            }
+        )
+
+    await create_audit_entry(
+        session,
+        action="makecatalogs",
+        entity_type="sync",
+        entity_id="makecatalogs",
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+    )
+    await session.commit()
+
+    return {
+        "catalogs": catalog_summary,
+        "warnings": warnings,
+        "total_catalogs": len(catalog_summary),
     }

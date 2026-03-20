@@ -130,6 +130,43 @@ async def update_catalog(
     )
 
 
+@router.delete("/{catalog_id}")
+async def delete_catalog(
+    catalog_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    catalog = await session.get(Catalog, catalog_id)
+    if not catalog:
+        raise HTTPException(status_code=404, detail="Catalog not found")
+
+    item_count = (
+        await session.execute(
+            select(func.count()).select_from(PkgInfoCatalog).where(PkgInfoCatalog.catalog_id == catalog_id)
+        )
+    ).scalar() or 0
+
+    if item_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete catalog with {item_count} assigned items. Remove items first.",
+        )
+
+    await create_audit_entry(
+        session,
+        action="delete",
+        entity_type="catalog",
+        entity_id=str(catalog_id),
+        entity_name=catalog.name,
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+    )
+
+    await session.delete(catalog)
+    await session.commit()
+    return {"message": "Catalog deleted"}
+
+
 @router.get("/{catalog_id}/items", response_model=list[PkgInfoSummary])
 async def list_catalog_items(
     catalog_id: uuid.UUID,

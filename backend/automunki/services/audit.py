@@ -1,8 +1,26 @@
 import uuid
+from datetime import date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from automunki.models.audit import AuditLog
+
+
+def _make_json_safe(obj: object) -> object:
+    """Recursively convert a value so it is safe for ``json.dumps``."""
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {str(k): _make_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_make_json_safe(v) for v in obj]
+    return str(obj)
 
 
 async def create_audit_entry(
@@ -28,9 +46,9 @@ async def create_audit_entry(
         entity_name=entity_name,
         user_id=user_id,
         user_email=user_email,
-        before_snapshot=before_snapshot,
-        after_snapshot=after_snapshot,
-        changes=changes,
+        before_snapshot=_make_json_safe(before_snapshot) if before_snapshot else None,
+        after_snapshot=_make_json_safe(after_snapshot) if after_snapshot else None,
+        changes=_make_json_safe(changes) if changes else None,
         ip_address=ip_address,
         user_agent=user_agent,
         notes=notes,

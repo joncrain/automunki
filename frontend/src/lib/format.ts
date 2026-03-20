@@ -37,14 +37,14 @@ export function initials(name: string): string {
 }
 
 const AVATAR_COLORS = [
-  'bg-blue-500/15 text-blue-700 dark:text-blue-400',
-  'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
-  'bg-violet-500/15 text-violet-700 dark:text-violet-400',
-  'bg-amber-500/15 text-amber-700 dark:text-amber-400',
-  'bg-rose-500/15 text-rose-700 dark:text-rose-400',
-  'bg-cyan-500/15 text-cyan-700 dark:text-cyan-400',
-  'bg-orange-500/15 text-orange-700 dark:text-orange-400',
-  'bg-pink-500/15 text-pink-700 dark:text-pink-400',
+  'bg-gruvbox-blue/15 text-gruvbox-blue',
+  'bg-gruvbox-green/15 text-gruvbox-green',
+  'bg-gruvbox-purple/15 text-gruvbox-purple',
+  'bg-gruvbox-yellow/15 text-gruvbox-yellow',
+  'bg-gruvbox-red/15 text-gruvbox-red',
+  'bg-gruvbox-aqua/15 text-gruvbox-aqua',
+  'bg-gruvbox-orange/15 text-gruvbox-orange',
+  'bg-primary/15 text-primary',
 ]
 
 export function avatarColor(name: string): string {

@@ -15,9 +15,7 @@ class Settings(BaseSettings):
     app_name: str = "AutoMunki"
     debug: bool = False
 
-    database_url: str = (
-        "postgresql+asyncpg://automunki:automunki@localhost:5432/automunki"
-    )
+    database_url: str = "postgresql+asyncpg://automunki:automunki@localhost:5432/automunki"
     database_echo: bool = False
 
     secret_key: str = "change-me-in-production"
@@ -31,6 +29,9 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     aws_s3_bucket: str = ""
     cloudfront_distribution_id: str = ""
+
+    munki_repo_pkg_base_url: str = ""
+    munki_repo_icon_base_url: str = ""
 
     api_public_url: str = ""
 

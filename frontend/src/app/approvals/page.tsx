@@ -36,10 +36,10 @@ function DiffEntry({
       {info.change === 'modified' && (
         <div className="mt-1 grid gap-1 text-xs">
           <div className="flex items-center gap-2">
-            <span className="text-red-500 line-through truncate">
+            <span className="text-destructive line-through truncate">
               {info.old_sha256?.slice(0, 16)}...
             </span>
-            <span className="text-emerald-500 truncate">
+            <span className="text-gruvbox-green truncate">
               {info.new_sha256?.slice(0, 16)}...
             </span>
           </div>
@@ -180,7 +180,7 @@ export default function ApprovalsPage() {
           <CardContent className="flex items-center justify-center p-12">
             <div className="text-center">
               <CheckCircle
-                className="mx-auto h-12 w-12 text-emerald-500/50"
+                className="mx-auto h-12 w-12 text-gruvbox-green/50"
                 aria-hidden="true"
               />
               <h3 className="mt-4 text-lg font-medium">All caught up!</h3>
@@ -206,7 +206,7 @@ export default function ApprovalsPage() {
               {pendingTrust > 0 && (
                 <Badge
                   variant="default"
-                  className="ml-1.5 text-xs px-1.5 bg-amber-600"
+                  className="ml-1.5 text-xs px-1.5 bg-gruvbox-yellow text-primary-foreground"
                 >
                   {pendingTrust}
                 </Badge>
@@ -223,7 +223,7 @@ export default function ApprovalsPage() {
               approvals?.map((item) => (
                 <Card
                   key={item.id}
-                  className="border-l-4 border-l-amber-500/40"
+                  className="border-l-4 border-l-gruvbox-yellow/40"
                 >
                   <CardHeader>
                     <CardTitle className="flex items-center justify-between">
@@ -333,14 +333,17 @@ export default function ApprovalsPage() {
                 return (
                   <Card
                     key={change.id}
-                    className="border-l-4 border-l-amber-500/40"
+                    className="border-l-4 border-l-gruvbox-yellow/40"
                   >
                     <CardHeader>
                       <CardTitle className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <ShieldAlert className="h-5 w-5 text-amber-500" />
+                          <ShieldAlert className="h-5 w-5 text-gruvbox-yellow" />
                           <span>{recipe?.name ?? 'Unknown Recipe'}</span>
-                          <Badge variant="default" className="bg-amber-600">
+                          <Badge
+                            variant="default"
+                            className="bg-gruvbox-yellow text-primary-foreground"
+                          >
                             Trust Changed
                           </Badge>
                         </div>

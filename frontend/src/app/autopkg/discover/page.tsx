@@ -251,8 +251,8 @@ export default function DiscoverRecipesPage() {
                   key={repo.full_name}
                   className={`border-l-4 transition-colors ${
                     hasRecipeResults
-                      ? 'border-l-emerald-500/50'
-                      : 'border-l-blue-500/30 hover:border-l-blue-500/60'
+                      ? 'border-l-gruvbox-green/50'
+                      : 'border-l-gruvbox-blue/30 hover:border-l-gruvbox-blue/60'
                   } ${!hasRecipeResults ? 'cursor-pointer' : ''}`}
                   onClick={
                     !hasRecipeResults ? () => setSelectedRepo(repo) : undefined
@@ -262,7 +262,7 @@ export default function DiscoverRecipesPage() {
                     <CardTitle className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2 truncate">
                         <BookOpen
-                          className={`h-4 w-4 shrink-0 ${hasRecipeResults ? 'text-emerald-500' : 'text-blue-500'}`}
+                          className={`h-4 w-4 shrink-0 ${hasRecipeResults ? 'text-gruvbox-green' : 'text-gruvbox-blue'}`}
                         />
                         <span className="truncate">{repo.name}</span>
                       </div>
@@ -476,7 +476,7 @@ function RepoRecipesDialog({
       <DialogContent className="max-h-[80vh] sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <BookOpen className="h-5 w-5 text-blue-500" />
+            <BookOpen className="h-5 w-5 text-gruvbox-blue" />
             {repo.name}
           </DialogTitle>
           <DialogDescription>

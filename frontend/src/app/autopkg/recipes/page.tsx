@@ -50,7 +50,7 @@ function trustStatusBadge(status: string) {
       return (
         <Badge
           variant="default"
-          className="bg-emerald-600 hover:bg-emerald-700"
+          className="bg-gruvbox-green text-primary-foreground hover:bg-gruvbox-green/90"
         >
           <ShieldCheck className="mr-1 h-3 w-3" />
           Verified
@@ -65,7 +65,10 @@ function trustStatusBadge(status: string) {
       )
     case 'pending_approval':
       return (
-        <Badge variant="default" className="bg-amber-600 hover:bg-amber-700">
+        <Badge
+          variant="default"
+          className="bg-gruvbox-yellow text-primary-foreground hover:bg-gruvbox-yellow/90"
+        >
           <ShieldAlert className="mr-1 h-3 w-3" />
           Pending
         </Badge>

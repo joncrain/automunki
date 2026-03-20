@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/popover'
 import {
   api,
+  type CatalogRead,
   type ManifestRead,
   type PaginatedResponse,
   type PkgInfoSummary,
@@ -105,6 +106,10 @@ export default function ManifestDetailPage() {
   const id = params.id as string
 
   const [sections, setSections] = useState<SectionsState | null>(null)
+  const [catalogNames, setCatalogNames] = useState<string[]>([])
+  const [includedManifestNames, setIncludedManifestNames] = useState<string[]>(
+    [],
+  )
   const [dirty, setDirty] = useState(false)
 
   const { data: manifest, isLoading } = useQuery({
@@ -113,7 +118,11 @@ export default function ManifestDetailPage() {
   })
 
   useEffect(() => {
-    if (manifest && !sections) setSections(manifestToSections(manifest))
+    if (manifest && !sections) {
+      setSections(manifestToSections(manifest))
+      setCatalogNames([...manifest.catalog_names])
+      setIncludedManifestNames([...manifest.included_manifest_names])
+    }
   }, [manifest, sections])
 
   const saveMutation = useMutation({
@@ -142,7 +151,11 @@ export default function ManifestDetailPage() {
 
   const handleSave = () => {
     if (!sections) return
-    saveMutation.mutate({ ...sections })
+    saveMutation.mutate({
+      ...sections,
+      catalog_names: catalogNames,
+      included_manifest_names: includedManifestNames,
+    })
   }
 
   const addItem = (section: SectionKey, name: string) => {
@@ -177,6 +190,28 @@ export default function ManifestDetailPage() {
     setDirty(true)
   }
 
+  const addCatalog = (name: string) => {
+    if (catalogNames.includes(name)) return
+    setCatalogNames((prev) => [...prev, name])
+    setDirty(true)
+  }
+
+  const removeCatalog = (name: string) => {
+    setCatalogNames((prev) => prev.filter((n) => n !== name))
+    setDirty(true)
+  }
+
+  const addIncludedManifest = (name: string) => {
+    if (includedManifestNames.includes(name)) return
+    setIncludedManifestNames((prev) => [...prev, name])
+    setDirty(true)
+  }
+
+  const removeIncludedManifest = (name: string) => {
+    setIncludedManifestNames((prev) => prev.filter((n) => n !== name))
+    setDirty(true)
+  }
+
   if (isLoading || !manifest) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -200,16 +235,7 @@ export default function ManifestDetailPage() {
       </Breadcrumb>
 
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">{manifest.name}</h1>
-          <div className="mt-1 flex gap-1">
-            {manifest.catalog_names.map((c) => (
-              <Badge key={c} variant="secondary">
-                {c}
-              </Badge>
-            ))}
-          </div>
-        </div>
+        <h1 className="text-3xl font-bold">{manifest.name}</h1>
         <Button
           onClick={handleSave}
           disabled={!dirty || saveMutation.isPending}
@@ -219,11 +245,51 @@ export default function ManifestDetailPage() {
         </Button>
       </div>
 
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center justify-between text-base">
+            <div className="flex items-center gap-2">
+              Catalogs
+              <Badge variant="secondary" className="text-xs">
+                {catalogNames.length}
+              </Badge>
+            </div>
+            <AddCatalogButton onAdd={addCatalog} existingItems={catalogNames} />
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {catalogNames.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No catalogs assigned. A manifest needs at least one catalog.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {catalogNames.map((name) => (
+                <Badge
+                  key={name}
+                  variant="secondary"
+                  className="gap-1 pr-1 text-sm"
+                >
+                  {name}
+                  <button
+                    type="button"
+                    aria-label={`Remove catalog ${name}`}
+                    className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                    onClick={() => removeCatalog(name)}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         {ITEM_SECTIONS.map((sec) => (
           <SortableSection
             key={sec.key}
-            sectionKey={sec.key}
             label={sec.label}
             badgeVariant={sec.variant}
             items={sections?.[sec.key] ?? []}
@@ -236,28 +302,55 @@ export default function ManifestDetailPage() {
         ))}
       </div>
 
-      {manifest.included_manifest_names.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Included Manifests</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-1">
-              {manifest.included_manifest_names.map((name) => (
-                <Badge key={name} variant="secondary">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center justify-between text-base">
+            <div className="flex items-center gap-2">
+              Included Manifests
+              <Badge variant="secondary" className="text-xs">
+                {includedManifestNames.length}
+              </Badge>
+            </div>
+            <AddManifestButton
+              onAdd={addIncludedManifest}
+              existingItems={includedManifestNames}
+              currentManifestName={manifest.name}
+            />
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {includedManifestNames.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No included manifests. Click + to include another manifest.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {includedManifestNames.map((name) => (
+                <Badge
+                  key={name}
+                  variant="secondary"
+                  className="gap-1 pr-1 text-sm"
+                >
                   {name}
+                  <button
+                    type="button"
+                    aria-label={`Remove included manifest ${name}`}
+                    className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                    onClick={() => removeIncludedManifest(name)}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </Badge>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
 
 function SortableSection({
-  sectionKey,
   label,
   badgeVariant,
   items,
@@ -265,7 +358,6 @@ function SortableSection({
   onRemove,
   onReorder,
 }: {
-  sectionKey: string
   label: string
   badgeVariant: 'outline' | 'destructive' | 'secondary' | 'default'
   items: string[]
@@ -443,6 +535,122 @@ function AddSoftwareButton({
                   }}
                 >
                   {name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function AddCatalogButton({
+  onAdd,
+  existingItems,
+}: {
+  onAdd: (name: string) => void
+  existingItems: string[]
+}) {
+  const [open, setOpen] = useState(false)
+
+  const { data: catalogs } = useQuery({
+    queryKey: ['catalogs'],
+    queryFn: () => api.get<CatalogRead[]>('/catalogs'),
+    enabled: open,
+  })
+
+  const available = (catalogs ?? []).filter(
+    (c) => !existingItems.includes(c.name),
+  )
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" aria-label="Add catalog">
+          <Plus className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[250px] p-0" align="end">
+        <Command>
+          <CommandInput placeholder="Search catalogs..." />
+          <CommandList>
+            <CommandEmpty>No catalogs available.</CommandEmpty>
+            <CommandGroup>
+              {available.map((cat) => (
+                <CommandItem
+                  key={cat.id}
+                  value={cat.name}
+                  onSelect={() => {
+                    onAdd(cat.name)
+                    setOpen(false)
+                  }}
+                >
+                  <div className="flex flex-col">
+                    <span>{cat.name}</span>
+                    {cat.display_name && (
+                      <span className="text-xs text-muted-foreground">
+                        {cat.display_name}
+                      </span>
+                    )}
+                  </div>
+                  <Badge variant="secondary" className="ml-auto text-xs">
+                    {cat.item_count}
+                  </Badge>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function AddManifestButton({
+  onAdd,
+  existingItems,
+  currentManifestName,
+}: {
+  onAdd: (name: string) => void
+  existingItems: string[]
+  currentManifestName: string
+}) {
+  const [open, setOpen] = useState(false)
+
+  const { data: manifests } = useQuery({
+    queryKey: ['manifests'],
+    queryFn: () => api.get<ManifestRead[]>('/manifests'),
+    enabled: open,
+  })
+
+  const available = (manifests ?? []).filter(
+    (m) => m.name !== currentManifestName && !existingItems.includes(m.name),
+  )
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" aria-label="Add included manifest">
+          <Plus className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[300px] p-0" align="end">
+        <Command>
+          <CommandInput placeholder="Search manifests..." />
+          <CommandList>
+            <CommandEmpty>No manifests available.</CommandEmpty>
+            <CommandGroup>
+              {available.map((m) => (
+                <CommandItem
+                  key={m.id}
+                  value={m.name}
+                  onSelect={() => {
+                    onAdd(m.name)
+                    setOpen(false)
+                  }}
+                >
+                  {m.name}
                 </CommandItem>
               ))}
             </CommandGroup>

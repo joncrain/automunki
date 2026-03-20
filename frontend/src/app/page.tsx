@@ -45,12 +45,12 @@ export default function DashboardPage() {
       <h1 className="text-3xl font-bold">Dashboard</h1>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-l-4 border-l-blue-500/50">
+        <Card className="border-l-4 border-l-gruvbox-blue/50">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Software Titles
             </CardTitle>
-            <Package className="h-4 w-4 text-blue-500" aria-hidden="true" />
+            <Package className="h-4 w-4 text-gruvbox-blue" aria-hidden="true" />
           </CardHeader>
           <CardContent>
             <div
@@ -65,11 +65,11 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-l-4 border-l-emerald-500/50">
+        <Card className="border-l-4 border-l-gruvbox-green/50">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Catalogs</CardTitle>
             <FolderOpen
-              className="h-4 w-4 text-emerald-500"
+              className="h-4 w-4 text-gruvbox-green"
               aria-hidden="true"
             />
           </CardHeader>
@@ -87,10 +87,10 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-l-4 border-l-violet-500/50">
+        <Card className="border-l-4 border-l-gruvbox-purple/50">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Last Run</CardTitle>
-            <Play className="h-4 w-4 text-violet-500" aria-hidden="true" />
+            <Play className="h-4 w-4 text-gruvbox-purple" aria-hidden="true" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -118,13 +118,13 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-l-4 border-l-amber-500/50">
+        <Card className="border-l-4 border-l-gruvbox-yellow/50">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Pending Approvals
             </CardTitle>
             <CheckCircle
-              className="h-4 w-4 text-amber-500"
+              className="h-4 w-4 text-gruvbox-yellow"
               aria-hidden="true"
             />
           </CardHeader>
