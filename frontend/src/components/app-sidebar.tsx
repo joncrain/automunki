@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   Package,
   Play,
-  RefreshCw,
   Settings,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -53,10 +52,7 @@ const navGroups = [
   },
   {
     label: 'Operations',
-    items: [
-      { href: '/sync', label: 'Sync', icon: RefreshCw },
-      { href: '/audit', label: 'Audit Log', icon: ClipboardList },
-    ],
+    items: [{ href: '/audit', label: 'Audit Log', icon: ClipboardList }],
   },
 ]
 

@@ -1,5 +1,4 @@
 pkgs/
-catalogs/
 test.py
 __pycache__/
 .vscode/

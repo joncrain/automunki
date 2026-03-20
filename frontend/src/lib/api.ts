@@ -53,6 +53,10 @@ export interface PkgInfoSummary {
   developer: string | null
   catalog_names: string[]
   unattended_install: boolean
+  unattended_uninstall: boolean
+  minimum_os_version: string | null
+  installer_type: string | null
+  restart_action: string | null
   created_at: string
   updated_at: string
 }
@@ -71,16 +75,61 @@ export interface PkgInfoDetail extends PkgInfoSummary {
   unattended_uninstall: boolean
   autoremove: boolean
   uninstallable: boolean
-  installs: unknown
-  receipts: unknown
+  installs: InstallItem[] | null
+  receipts: ReceiptItem[] | null
   blocking_applications: string[] | null
-  items_to_copy: unknown
+  items_to_copy: ItemToCopy[] | null
   supported_architectures: string[] | null
   requires: string[] | null
   update_for: string[] | null
   preinstall_script: string | null
   postinstall_script: string | null
+  preuninstall_script: string | null
+  postuninstall_script: string | null
+  installcheck_script: string | null
+  uninstallcheck_script: string | null
+  version_script: string | null
+  notes: string | null
+  restart_action: string | null
+  on_demand: boolean
+  force_install_after_date: string | null
+  apple_item: boolean
+  installable_condition: string | null
+  package_path: string | null
+  package_complete_url: string | null
+  minimum_munki_version: string | null
+  uninstaller_item_location: string | null
   is_deleted: boolean
+}
+
+export interface InstallItem {
+  type?: string
+  path?: string
+  CFBundleIdentifier?: string
+  CFBundleName?: string
+  CFBundleShortVersionString?: string
+  CFBundleVersion?: string
+  minosversion?: string
+  version_comparison_key?: string
+  [key: string]: unknown
+}
+
+export interface ReceiptItem {
+  packageid?: string
+  version?: string
+  installed_size?: number
+  optional?: boolean
+  [key: string]: unknown
+}
+
+export interface ItemToCopy {
+  source_item?: string
+  destination_path?: string
+  destination_item?: string
+  user?: string
+  group?: string
+  mode?: string
+  [key: string]: unknown
 }
 
 export interface CatalogRead {
@@ -137,6 +186,7 @@ export interface RunResultRead {
   recipe_name: string
   status: string
   imported_version: string | null
+  imported_display_name: string | null
   imported_pkg_path: string | null
   imported_pkginfo_path: string | null
   imported_catalogs: string[] | null
@@ -157,7 +207,7 @@ export interface AutoPkgRecipeRead {
   identifier: string
   name: string
   parent_recipe: string | null
-  repo_id: string | null
+  source_repo_full_name: string | null
   is_enabled: boolean
   is_override: boolean
   auto_promote: boolean
@@ -166,7 +216,6 @@ export interface AutoPkgRecipeRead {
   trust_info: unknown
   input_variables: unknown
   trust_status: string
-  trust_diff: unknown
   trust_verified_at: string | null
   trust_approved_by: string | null
   trust_approved_at: string | null
@@ -187,6 +236,11 @@ export interface TrustChangeRequestRead {
   reviewed_by: string | null
   reviewed_at: string | null
   comment: string | null
+}
+
+export interface TrustCommitResolveResponse {
+  commit_sha: string | null
+  commit_url: string | null
 }
 
 export interface CachedGitHubRecipe {
@@ -210,6 +264,8 @@ export interface CachedGitHubRepo {
   updated_at: string | null
   default_branch: string | null
   synced_at: string
+  /** When true, repo is not dropped by “Sync Repos” (autopkg org list). */
+  is_custom: boolean
   cached_recipes: CachedGitHubRecipe[]
 }
 
@@ -249,14 +305,6 @@ export interface AuditLogRead {
   created_at: string
 }
 
-export interface SyncJobRead {
-  id: string
-  status: string
-  triggered_by: string | null
-  trigger_type: string | null
-  files_synced: number | null
-  started_at: string | null
-  completed_at: string | null
-  error_message: string | null
-  created_at: string
+export interface UiSettingsRead {
+  github_repo: string
 }

@@ -94,7 +94,7 @@ Always use Alembic for schema changes:
 
 ```bash
 cd backend
-alembic revision --autogenerate -m "add new_field to pkg_info"
+alembic revision --autogenerate -m "add new_field to munki_pkginfo"
 alembic upgrade head
 ```
 

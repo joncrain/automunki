@@ -1,10 +1,15 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import type { ColumnDef } from '@tanstack/react-table'
+import type {
+  ColumnDef,
+  SortingState,
+  VisibilityState,
+} from '@tanstack/react-table'
 import { Search, X } from 'lucide-react'
 import Link from 'next/link'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
+import { useState } from 'react'
 import { DataTable } from '@/components/data-table'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
@@ -44,6 +49,7 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
         </span>
       </Link>
     ),
+    enableHiding: false,
   },
   {
     accessorKey: 'version',
@@ -70,6 +76,7 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
   {
     accessorKey: 'catalog_names',
     header: 'Catalogs',
+    enableSorting: false,
     cell: ({ row }) => (
       <div className="flex gap-1">
         {row.original.catalog_names.map((c) => (
@@ -81,6 +88,25 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
     ),
   },
   {
+    accessorKey: 'minimum_os_version',
+    header: 'Min OS',
+    cell: ({ row }) => (
+      <span className="font-mono text-sm text-muted-foreground">
+        {row.original.minimum_os_version ?? '—'}
+      </span>
+    ),
+  },
+  {
+    accessorKey: 'installer_type',
+    header: 'Installer Type',
+    cell: ({ row }) =>
+      row.original.installer_type ? (
+        <Badge variant="outline">{row.original.installer_type}</Badge>
+      ) : (
+        <span className="text-sm text-muted-foreground">—</span>
+      ),
+  },
+  {
     accessorKey: 'unattended_install',
     header: 'Unattended',
     cell: ({ row }) => (
@@ -88,6 +114,27 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
         {row.original.unattended_install ? 'Yes' : 'No'}
       </Badge>
     ),
+  },
+  {
+    accessorKey: 'unattended_uninstall',
+    header: 'Unattended Uninstall',
+    cell: ({ row }) => (
+      <Badge
+        variant={row.original.unattended_uninstall ? 'default' : 'outline'}
+      >
+        {row.original.unattended_uninstall ? 'Yes' : 'No'}
+      </Badge>
+    ),
+  },
+  {
+    accessorKey: 'restart_action',
+    header: 'Restart Action',
+    cell: ({ row }) =>
+      row.original.restart_action ? (
+        <Badge variant="secondary">{row.original.restart_action}</Badge>
+      ) : (
+        <span className="text-sm text-muted-foreground">—</span>
+      ),
   },
   {
     accessorKey: 'updated_at',
@@ -99,6 +146,20 @@ const columns: ColumnDef<PkgInfoSummary>[] = [
     ),
   },
 ]
+
+const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
+  display_name: true,
+  version: true,
+  category: true,
+  developer: true,
+  catalog_names: true,
+  minimum_os_version: false,
+  installer_type: false,
+  unattended_install: true,
+  unattended_uninstall: false,
+  restart_action: false,
+  updated_at: true,
+}
 
 export default function SoftwarePage() {
   const [page, setPage] = useQueryState('page', parseAsInteger.withDefault(1))
@@ -118,13 +179,31 @@ export default function SoftwarePage() {
     'catalog',
     parseAsString.withDefault(''),
   )
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'display_name', desc: false },
+  ])
+
+  const sortBy =
+    sorting[0]?.id === 'display_name' ? 'name' : (sorting[0]?.id ?? 'name')
+  const sortOrder = sorting[0]?.desc ? 'desc' : 'asc'
 
   const { data, isLoading } = useQuery({
-    queryKey: ['pkginfo', page, pageSize, search, category, catalog],
+    queryKey: [
+      'pkginfo',
+      page,
+      pageSize,
+      search,
+      category,
+      catalog,
+      sortBy,
+      sortOrder,
+    ],
     queryFn: () => {
       const params = new URLSearchParams()
       params.set('page', String(page))
       params.set('page_size', String(pageSize))
+      params.set('sort_by', sortBy)
+      params.set('sort_order', sortOrder)
       if (search) params.set('search', search)
       if (category) params.set('category', category)
       if (catalog) params.set('catalog', catalog)
@@ -139,9 +218,10 @@ export default function SoftwarePage() {
     queryFn: () => api.get<CatalogRead[]>('/catalogs'),
   })
 
-  const categories = Array.from(
-    new Set((data?.items ?? []).map((i) => i.category).filter(Boolean)),
-  ).sort() as string[]
+  const { data: categories } = useQuery({
+    queryKey: ['pkginfo-categories'],
+    queryFn: () => api.get<string[]>('/pkginfo/categories'),
+  })
 
   const hasFilters = search || category || catalog
 
@@ -177,7 +257,7 @@ export default function SoftwarePage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="_all">All Categories</SelectItem>
-            {categories.map((c) => (
+            {(categories ?? []).map((c) => (
               <SelectItem key={c} value={c}>
                 {c}
               </SelectItem>
@@ -237,6 +317,12 @@ export default function SoftwarePage() {
             setPage(1)
           }}
           isLoading={isLoading}
+          sorting={sorting}
+          onSortingChange={(next) => {
+            setSorting(next)
+            setPage(1)
+          }}
+          defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
         />
       </div>
     </div>

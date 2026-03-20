@@ -55,6 +55,7 @@ Authorization: Bearer <jwt_token>
 | PUT | `/catalogs/{id}` | Update catalog |
 | GET | `/catalogs/{id}/items` | List items in a catalog |
 | POST | `/catalogs/{id}/compile` | Generate catalog plist XML |
+| POST | `/catalogs/makecatalogs` | Verify all catalogs (compile each, return sizes + warnings) |
 
 ## Manifests
 
@@ -79,17 +80,15 @@ Authorization: Bearer <jwt_token>
 | GET | `/autopkg/recipes` | List managed recipes |
 | POST | `/autopkg/recipes` | Create/add a recipe |
 | PUT | `/autopkg/recipes/{id}` | Update recipe config |
-| GET | `/autopkg/recipes/discover` | Discover recipes from autopkg org |
+| GET | `/autopkg/recipes/discover` | List cached GitHub recipe repos (Discover UI) |
+| POST | `/autopkg/cache/sync-repos` | Refresh repo list from the autopkg GitHub org |
+| POST | `/autopkg/cache/sync-recipes` | Index `.munki.recipe` files for all cached repos |
+| POST | `/autopkg/cache/sync-repo/{owner}/{name}` | Index recipes for one cached repo |
+| POST | `/autopkg/cache/repos` | Add any public GitHub `owner/repo` to the cache (`is_custom`) |
+| DELETE | `/autopkg/cache/repos/{owner}/{name}` | Remove a repo from the cache (org repos return on sync) |
 | GET | `/autopkg/approvals` | List pending approvals |
 | POST | `/autopkg/results/{id}/approve` | Approve or reject a result |
-
-## Repo Sync
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/sync/compile` | Trigger repo compilation + S3 sync |
-| GET | `/sync/status` | Get current sync status |
-| GET | `/sync/history` | Get sync history (paginated) |
+| POST | `/autopkg/trust/resolve-commit` | Map trust SHA-256 file hashes to a GitHub commit URL (history walk) |
 
 ## Client Reporting
 

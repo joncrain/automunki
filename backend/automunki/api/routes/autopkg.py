@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -10,9 +10,8 @@ from automunki.api.deps import get_session
 from automunki.core.security import current_optional_user
 from automunki.models.autopkg import (
     ApprovalStatus,
-    AutoPkgMetadataCache,
+    AutoPkgMetadataCacheEntry,
     AutoPkgRecipe,
-    AutoPkgRepo,
     AutoPkgRun,
     AutoPkgRunResult,
     GitHubRecipe,
@@ -21,6 +20,7 @@ from automunki.models.autopkg import (
     RunStatus,
     RunTriggerType,
     TrustChangeRequest,
+    TrustStatus,
 )
 from automunki.models.munki import Catalog, PkgInfo, PkgInfoCatalog
 from automunki.models.user import User
@@ -30,6 +30,7 @@ from automunki.schemas.autopkg import (
     AutoPkgRecipeRead,
     AutoPkgRecipeUpdate,
     AutoPkgRunRead,
+    GitHubCustomRepoAdd,
     GitHubRecipeRepoRead,
     MetadataCacheRead,
     MetadataCacheWrite,
@@ -39,12 +40,17 @@ from automunki.schemas.autopkg import (
     TriggerRunRequest,
     TrustApprovalRequest,
     TrustChangeRequestRead,
+    TrustCommitResolveRequest,
+    TrustCommitResolveResponse,
 )
 from automunki.schemas.common import PaginatedResponse
 from automunki.services.audit import create_audit_entry
 from automunki.services.autopkg import (
+    add_custom_repo_to_cache,
     discover_recipes_in_repo,
     dispatch_autopkg_workflow,
+    normalize_github_full_name,
+    remove_github_repo_from_cache,
     sync_all_recipes_to_cache,
     sync_repo_recipes_to_cache,
     sync_repos_to_cache,
@@ -56,7 +62,13 @@ from automunki.services.trust import (
     compute_trust_info,
     fetch_recipe_content,
     infer_repos_from_trust_info,
+    resolve_introducing_commit,
     verify_trust,
+)
+
+# Overrides with these trust states must not be dispatched to the runner.
+TRUST_STATUS_BLOCKS_RUN = frozenset(
+    {TrustStatus.failed.value, TrustStatus.pending_approval.value},
 )
 
 router = APIRouter(prefix="/autopkg", tags=["autopkg"])
@@ -68,6 +80,24 @@ async def trigger_run(
     session: AsyncSession = Depends(get_session),
     user: User | None = Depends(current_optional_user),
 ):
+    if data.recipe_names:
+        res = await session.execute(
+            select(AutoPkgRecipe).where(AutoPkgRecipe.name.in_(data.recipe_names)),
+        )
+        found = {r.name: r for r in res.scalars().all()}
+        missing = set(data.recipe_names) - set(found.keys())
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown recipe names: {', '.join(sorted(missing))}",
+            )
+        blocked = sorted(n for n, r in found.items() if r.trust_status in TRUST_STATUS_BLOCKS_RUN)
+        if blocked:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"Cannot run recipes while trust is failed or pending approval: {', '.join(blocked)}"),
+            )
+
     run = AutoPkgRun(
         status=RunStatus.pending,
         trigger_type=RunTriggerType.manual_ui,
@@ -142,16 +172,12 @@ async def get_run_config(
     If `recipes` is provided, only those recipes are included.
     Otherwise all enabled overrides are returned.
     """
-    query = (
-        select(AutoPkgRecipe)
-        .options(selectinload(AutoPkgRecipe.repo))
-        .where(
-            AutoPkgRecipe.is_override.is_(True),
-            AutoPkgRecipe.is_enabled.is_(True),
-        )
+    query = select(AutoPkgRecipe).where(
+        AutoPkgRecipe.is_override.is_(True),
+        AutoPkgRecipe.is_enabled.is_(True),
     )
     result = await session.execute(query)
-    all_recipes = result.scalars().all()
+    all_recipes = [r for r in result.scalars().all() if r.trust_status not in TRUST_STATUS_BLOCKS_RUN]
 
     if recipes:
         names = {n.strip() for n in recipes.split(",") if n.strip()}
@@ -198,8 +224,8 @@ async def get_run_config(
 
         overrides.append(override_entry)
 
-        if recipe.repo:
-            repo_urls.add(recipe.repo.url)
+        if recipe.source_repo_full_name:
+            repo_urls.add(f"https://github.com/{recipe.source_repo_full_name}.git")
         trust_for_repos = recipe.trust_info
         if not trust_for_repos and recipe.override_data:
             trust_for_repos = recipe.override_data.get("ParentRecipeTrustInfo")
@@ -245,6 +271,7 @@ async def post_run_result(
         recipe_name=data.recipe_name,
         status=RecipeResultStatus(data.status),
         imported_version=data.imported_version,
+        imported_display_name=data.imported_display_name,
         imported_pkg_path=data.imported_pkg_path,
         imported_pkginfo_path=data.imported_pkginfo_path,
         imported_catalogs=data.imported_catalogs,
@@ -257,6 +284,10 @@ async def post_run_result(
 
     recipe = await session.execute(select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == data.recipe_identifier))
     recipe_obj = recipe.scalar_one_or_none()
+
+    if recipe_obj:
+        recipe_obj.last_run_at = datetime.now(UTC)
+        recipe_obj.last_run_status = data.status
 
     if data.status == "trust_failed":
         recipe_result.approval_status = ApprovalStatus.pending
@@ -530,10 +561,8 @@ async def verify_recipe_trust(
 
     if result.status == "verified":
         recipe.trust_status = "verified"
-        recipe.trust_diff = None
     elif result.status == "failed":
         recipe.trust_status = "pending_approval"
-        recipe.trust_diff = result.diff
 
         location_cache = await build_location_cache(session)
         new_trust = await compute_trust_info(
@@ -551,7 +580,6 @@ async def verify_recipe_trust(
         session.add(change_request)
     else:
         recipe.trust_status = "unknown"
-        recipe.trust_diff = None
 
     await create_audit_entry(
         session,
@@ -613,7 +641,6 @@ async def update_recipe_trust(
     old_trust = recipe.trust_info
     recipe.trust_info = new_trust
     recipe.trust_status = "verified"
-    recipe.trust_diff = None
     recipe.trust_verified_at = datetime.now(UTC)
     recipe.trust_approved_by = user.email if user else "system"
     recipe.trust_approved_at = datetime.now(UTC)
@@ -674,7 +701,6 @@ async def approve_recipe_trust(
 
         recipe.trust_info = change_request.new_trust_info
         recipe.trust_status = "verified"
-        recipe.trust_diff = None
         recipe.trust_approved_by = reviewer
         recipe.trust_approved_at = now
     else:
@@ -721,6 +747,47 @@ async def list_trust_changes(
     return [TrustChangeRequestRead.model_validate(r) for r in result.scalars().all()]
 
 
+@router.post(
+    "/trust/resolve-commit",
+    response_model=TrustCommitResolveResponse,
+)
+async def resolve_trust_commit(
+    data: TrustCommitResolveRequest,
+    user: User | None = Depends(current_optional_user),
+):
+    """
+    Map a trust hash diff to a GitHub commit URL by walking recent history
+    for the file and matching SHA-256 content hashes (not git blob SHAs).
+    """
+    _ = user  # auth required via dependency
+    repo = data.github_repo.strip().removesuffix("/")
+    if repo.count("/") != 1 or ".." in repo or repo.startswith("/"):
+        raise HTTPException(status_code=400, detail="github_repo must be owner/repo")
+    path = data.github_path.strip().lstrip("/")
+    if not path or any(p in ("", ".", "..") for p in path.split("/")):
+        raise HTTPException(status_code=400, detail="Invalid github_path")
+
+    new_h = data.new_sha256.strip().lower()
+    old_h = data.old_sha256.strip().lower() if data.old_sha256 else None
+    if not new_h:
+        raise HTTPException(status_code=400, detail="new_sha256 is required")
+
+    try:
+        sha = await resolve_introducing_commit(repo, path, new_h, old_h)
+    except GitHubRateLimitError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="GitHub API rate limit exceeded. Try again later.",
+        ) from exc
+
+    if not sha:
+        return TrustCommitResolveResponse(commit_sha=None, commit_url=None)
+    return TrustCommitResolveResponse(
+        commit_sha=sha,
+        commit_url=f"https://github.com/{repo}/commit/{sha}",
+    )
+
+
 @router.post("/repos/update")
 async def update_repos_and_verify_trust(
     session: AsyncSession = Depends(get_session),
@@ -758,11 +825,9 @@ async def update_repos_and_verify_trust(
 
             if verification.status == "verified":
                 recipe.trust_status = "verified"
-                recipe.trust_diff = None
                 summary["verified"] += 1
             elif verification.status == "failed":
                 recipe.trust_status = "pending_approval"
-                recipe.trust_diff = verification.diff
 
                 new_trust = await compute_trust_info(
                     recipe.parent_recipe,
@@ -841,6 +906,43 @@ async def sync_single_repo(
     return {"repo": full_name, "recipes_synced": count}
 
 
+@router.post("/cache/repos", response_model=GitHubRecipeRepoRead)
+async def add_manual_github_repo(
+    data: GitHubCustomRepoAdd,
+    session: AsyncSession = Depends(get_session),
+):
+    """Add any public GitHub repo to the discover cache (outside the autopkg org)."""
+    try:
+        repo = await add_custom_repo_to_cache(session, data.full_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    loaded = (
+        await session.execute(
+            select(GitHubRecipeRepo)
+            .options(selectinload(GitHubRecipeRepo.cached_recipes))
+            .where(GitHubRecipeRepo.id == repo.id)
+        )
+    ).scalar_one()
+    return GitHubRecipeRepoRead.model_validate(loaded)
+
+
+@router.delete("/cache/repos/{repo_owner}/{repo_name}")
+async def remove_cached_github_repo(
+    repo_owner: str,
+    repo_name: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Remove a repo from the discover cache (and its cached recipe index). Org repos reappear on Sync Repos."""
+    try:
+        full_name = normalize_github_full_name(f"{repo_owner}/{repo_name}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    ok = await remove_github_repo_from_cache(session, full_name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Repo not in cache")
+    return {"removed": full_name}
+
+
 @router.post("/recipes/add-override", response_model=AutoPkgRecipeRead)
 async def add_recipe_override(
     data: AutoPkgRecipeCreate,
@@ -911,17 +1013,6 @@ async def add_recipe_override(
         }
     override_plist["ParentRecipeTrustInfo"] = plist_trust
 
-    clone_url = f"https://github.com/{data.github_repo}.git"
-    result = await session.execute(select(AutoPkgRepo).where(AutoPkgRepo.url == clone_url))
-    repo = result.scalar_one_or_none()
-    if not repo:
-        repo = AutoPkgRepo(
-            url=clone_url,
-            name=data.github_repo,
-        )
-        session.add(repo)
-        await session.flush()
-
     payload = {
         "identifier": override_info["identifier"],
         "name": data.name,
@@ -929,7 +1020,7 @@ async def add_recipe_override(
         "input_variables": input_variables,
         "trust_info": trust_info,
         "override_data": override_plist,
-        "repo_id": repo.id,
+        "source_repo_full_name": data.github_repo,
         "is_override": True,
         "is_enabled": data.is_enabled,
         "auto_promote": data.auto_promote,
@@ -944,7 +1035,7 @@ async def add_recipe_override(
     recipe = AutoPkgRecipe(**payload)
     session.add(recipe)
 
-    audit_snapshot = {**payload, "repo_id": str(payload["repo_id"])}
+    audit_snapshot = {**payload}
     await create_audit_entry(
         session,
         action="create_override",
@@ -970,13 +1061,11 @@ async def list_inferred_repos(
 ):
     """
     Return the set of GitHub repos needed for autopkg runs.
-    Uses the repo relationship on each recipe as the primary source,
-    falling back to inference from trust_info for legacy recipes.
+    Uses ``source_repo_full_name`` on each recipe when set,
+    falling back to inference from ``trust_info`` for legacy recipes.
     """
     result = await session.execute(
-        select(AutoPkgRecipe)
-        .options(selectinload(AutoPkgRecipe.repo))
-        .where(
+        select(AutoPkgRecipe).where(
             AutoPkgRecipe.is_override.is_(True),
             AutoPkgRecipe.is_enabled.is_(True),
         )
@@ -985,8 +1074,8 @@ async def list_inferred_repos(
 
     all_repos: set[str] = set()
     for recipe in recipes:
-        if recipe.repo:
-            all_repos.add(recipe.repo.name)
+        if recipe.source_repo_full_name:
+            all_repos.add(recipe.source_repo_full_name)
         elif recipe.trust_info:
             inferred = infer_repos_from_trust_info(recipe.trust_info)
             all_repos.update(inferred)
@@ -1022,7 +1111,7 @@ async def approve_result(
         action="approve" if data.approved else "reject",
         entity_type="autopkg_run_result",
         entity_id=str(result_id),
-        entity_name=result.recipe_name,
+        entity_name=result.imported_display_name or result.recipe_name,
         user_id=user.id if user else None,
         user_email=user.email if user else None,
         notes=data.comment,
@@ -1051,12 +1140,18 @@ async def list_pending_approvals(
 async def get_metadata_cache(
     session: AsyncSession = Depends(get_session),
 ):
-    """Return the stored cloud-autopkg-runner metadata cache."""
-    result = await session.execute(select(AutoPkgMetadataCache).limit(1))
-    row = result.scalar_one_or_none()
-    if not row:
+    """Return the stored cloud-autopkg-runner metadata cache (one DB row per recipe)."""
+    result = await session.execute(select(AutoPkgMetadataCacheEntry))
+    rows = result.scalars().all()
+    if not rows:
         return MetadataCacheRead(cache_data={}, updated_at=datetime.now(UTC))
-    return MetadataCacheRead.model_validate(row)
+    cache_data: dict = {}
+    latest: datetime | None = None
+    for r in rows:
+        cache_data[r.recipe_key] = r.entry
+        if latest is None or r.updated_at > latest:
+            latest = r.updated_at
+    return MetadataCacheRead(cache_data=cache_data, updated_at=latest or datetime.now(UTC))
 
 
 @router.put("/metadata-cache", response_model=MetadataCacheRead)
@@ -1064,17 +1159,14 @@ async def put_metadata_cache(
     data: MetadataCacheWrite,
     session: AsyncSession = Depends(get_session),
 ):
-    """Upsert the cloud-autopkg-runner metadata cache."""
-    result = await session.execute(select(AutoPkgMetadataCache).limit(1))
-    row = result.scalar_one_or_none()
-    if row:
-        row.cache_data = data.cache_data
-    else:
-        row = AutoPkgMetadataCache(cache_data=data.cache_data)
-        session.add(row)
+    """Replace the metadata cache from the runner's aggregated JSON (per-recipe rows in DB)."""
+    await session.execute(delete(AutoPkgMetadataCacheEntry))
+    now = datetime.now(UTC)
+    for key, entry in data.cache_data.items():
+        if isinstance(entry, dict):
+            session.add(AutoPkgMetadataCacheEntry(recipe_key=key, entry=entry, updated_at=now))
     await session.commit()
-    await session.refresh(row)
-    return MetadataCacheRead.model_validate(row)
+    return MetadataCacheRead(cache_data=data.cache_data, updated_at=now)
 
 
 # ── Pkginfo ingestion ────────────────────────────────────────────────────

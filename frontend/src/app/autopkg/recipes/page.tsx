@@ -187,20 +187,12 @@ function makeColumns(
     {
       accessorKey: 'last_run_status',
       header: 'Last Run',
-      cell: ({ row }) =>
-        row.original.last_run_status ? (
-          <Badge
-            variant={
-              row.original.last_run_status === 'success'
-                ? 'default'
-                : 'destructive'
-            }
-          >
-            {row.original.last_run_status}
-          </Badge>
-        ) : (
-          '—'
-        ),
+      cell: ({ row }) => {
+        const st = row.original.last_run_status
+        if (!st) return '—'
+        const ok = ['success', 'imported', 'no_change'].includes(st)
+        return <Badge variant={ok ? 'default' : 'destructive'}>{st}</Badge>
+      },
     },
     {
       id: 'actions',
@@ -360,7 +352,7 @@ export default function RecipesPage() {
           <Button variant="outline" asChild>
             <Link href="/autopkg/discover">
               <Compass className="mr-2 h-4 w-4" />
-              Discover Recipes
+              Discover Munki Recipes
             </Link>
           </Button>
         </div>
@@ -767,6 +759,9 @@ function RecipeEditDialog({
   const [identifier, setIdentifier] = useState(recipe.identifier)
   const [name, setName] = useState(recipe.name)
   const [parentRecipe, setParentRecipe] = useState(recipe.parent_recipe ?? '')
+  const [sourceRepoFullName, setSourceRepoFullName] = useState(
+    recipe.source_repo_full_name ?? '',
+  )
   const [isEnabled, setIsEnabled] = useState(recipe.is_enabled)
   const [isOverride, setIsOverride] = useState(recipe.is_override)
   const [autoPromote, setAutoPromote] = useState(recipe.auto_promote)
@@ -834,6 +829,7 @@ function RecipeEditDialog({
       identifier,
       name,
       parent_recipe: parentRecipe || null,
+      source_repo_full_name: sourceRepoFullName.trim() || null,
       is_enabled: isEnabled,
       is_override: isOverride,
       auto_promote: autoPromote,
@@ -916,6 +912,21 @@ function RecipeEditDialog({
                 placeholder="com.github.autopkg.munki.Firefox"
                 className="font-mono text-sm"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="recipe-source-repo">Source repo (GitHub)</Label>
+              <Input
+                id="recipe-source-repo"
+                value={sourceRepoFullName}
+                onChange={(e) => setSourceRepoFullName(e.target.value)}
+                placeholder="autopkg/recipes"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Used for runner repo-add hints and inferred repo lists
+                (owner/repo, no URL).
+              </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">

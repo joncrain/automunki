@@ -2,15 +2,29 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_project_root = Path(__file__).resolve().parents[3]
+
+def _repo_root_env_file() -> str | None:
+    """Prefer the monorepo root `.env` (next to `backend/`), not `backend/.env`.
+
+    Layout: <repo>/backend/automunki/core/config.py → load <repo>/.env only.
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "backend").is_dir() and (parent / ".env").is_file():
+            return str(parent / ".env")
+    legacy = here.parents[3] / ".env"
+    return str(legacy) if legacy.is_file() else None
+
+
+_env_file = _repo_root_env_file()
+_settings_kwargs: dict = {"extra": "ignore"}
+if _env_file:
+    _settings_kwargs["env_file"] = _env_file
+    _settings_kwargs["env_file_encoding"] = "utf-8"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=str(_project_root / ".env"),
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+    model_config = SettingsConfigDict(**_settings_kwargs)
 
     app_name: str = "AutoMunki"
     debug: bool = False

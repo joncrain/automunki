@@ -14,7 +14,7 @@ async def import_repo(repo_path: str):
     from sqlalchemy import select
 
     from automunki.core.db import async_session_factory
-    from automunki.models.autopkg import AutoPkgRecipe, AutoPkgRepo
+    from automunki.models.autopkg import AutoPkgRecipe
     from automunki.models.munki import (
         Catalog,
         ItemType,
@@ -47,23 +47,17 @@ async def import_repo(repo_path: str):
                     with open(plist_file, "rb") as f:
                         data = plistlib.load(f)
                 except Exception as e:
-                    logger.warning(
-                        "plist_parse_error", file=str(plist_file), error=str(e)
-                    )
+                    logger.warning("plist_parse_error", file=str(plist_file), error=str(e))
                     continue
 
                 name = data.get("name", "")
                 version = data.get("version", "")
                 if not name or not version:
-                    logger.warning(
-                        "skipping_pkginfo_no_name_version", file=str(plist_file)
-                    )
+                    logger.warning("skipping_pkginfo_no_name_version", file=str(plist_file))
                     continue
 
                 existing = await session.execute(
-                    select(PkgInfo).where(
-                        PkgInfo.name == name, PkgInfo.version == version
-                    )
+                    select(PkgInfo).where(PkgInfo.name == name, PkgInfo.version == version)
                 )
                 if existing.scalar_one_or_none():
                     logger.debug("pkginfo_already_exists", name=name, version=version)
@@ -114,9 +108,7 @@ async def import_repo(repo_path: str):
 
                 for cat_name in data.get("catalogs", []):
                     if cat_name not in catalog_cache:
-                        existing_cat = await session.execute(
-                            select(Catalog).where(Catalog.name == cat_name)
-                        )
+                        existing_cat = await session.execute(select(Catalog).where(Catalog.name == cat_name))
                         cat = existing_cat.scalar_one_or_none()
                         if not cat:
                             cat = Catalog(name=cat_name)
@@ -136,11 +128,7 @@ async def import_repo(repo_path: str):
         # --- Import manifests ---
         manifests_dir = repo / "manifests"
         if manifests_dir.exists():
-            manifest_files = [
-                f
-                for f in manifests_dir.iterdir()
-                if f.is_file() and not f.name.startswith(".")
-            ]
+            manifest_files = [f for f in manifests_dir.iterdir() if f.is_file() and not f.name.startswith(".")]
             logger.info("importing_manifests", count=len(manifest_files))
 
             for manifest_file in manifest_files:
@@ -148,15 +136,11 @@ async def import_repo(repo_path: str):
                     with open(manifest_file, "rb") as f:
                         data = plistlib.load(f)
                 except Exception as e:
-                    logger.warning(
-                        "manifest_parse_error", file=str(manifest_file), error=str(e)
-                    )
+                    logger.warning("manifest_parse_error", file=str(manifest_file), error=str(e))
                     continue
 
                 manifest_name = manifest_file.name
-                existing = await session.execute(
-                    select(Manifest).where(Manifest.name == manifest_name)
-                )
+                existing = await session.execute(select(Manifest).where(Manifest.name == manifest_name))
                 if existing.scalar_one_or_none():
                     logger.debug("manifest_already_exists", name=manifest_name)
                     continue
@@ -171,9 +155,7 @@ async def import_repo(repo_path: str):
 
                 for i, cat_name in enumerate(data.get("catalogs", [])):
                     if cat_name not in catalog_cache:
-                        existing_cat = await session.execute(
-                            select(Catalog).where(Catalog.name == cat_name)
-                        )
+                        existing_cat = await session.execute(select(Catalog).where(Catalog.name == cat_name))
                         cat = existing_cat.scalar_one_or_none()
                         if not cat:
                             cat = Catalog(name=cat_name)
@@ -245,17 +227,13 @@ async def import_repo(repo_path: str):
                     with open(override_file, "rb") as f:
                         data = plistlib.load(f)
                 except Exception as e:
-                    logger.warning(
-                        "override_parse_error", file=str(override_file), error=str(e)
-                    )
+                    logger.warning("override_parse_error", file=str(override_file), error=str(e))
                     continue
 
                 identifier = data.get("Identifier", "")
                 name = data.get("Input", {}).get("NAME", override_file.stem)
 
-                existing = await session.execute(
-                    select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == identifier)
-                )
+                existing = await session.execute(select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == identifier))
                 if existing.scalar_one_or_none():
                     continue
 
@@ -266,33 +244,12 @@ async def import_repo(repo_path: str):
                     is_override=True,
                     is_enabled=True,
                     override_data=_sanitize_plist_for_json(data.get("Input", {})),
-                    trust_info=_sanitize_plist_for_json(
-                        data.get("ParentRecipeTrustInfo", {})
-                    ),
+                    trust_info=_sanitize_plist_for_json(data.get("ParentRecipeTrustInfo", {})),
                     input_variables=_sanitize_plist_for_json(data.get("Input", {})),
-                    target_catalogs=data.get("Input", {})
-                    .get("pkginfo", {})
-                    .get("catalogs"),
+                    target_catalogs=data.get("Input", {}).get("pkginfo", {}).get("catalogs"),
                 )
                 session.add(recipe)
                 logger.info("imported_override", identifier=identifier, name=name)
-
-        # --- Import repo list ---
-        repo_list_file = repo / "autopkg_src" / "repo_list.txt"
-        if repo_list_file.exists():
-            with open(repo_list_file) as f:
-                repo_urls = [line.strip() for line in f if line.strip()]
-            logger.info("importing_repos", count=len(repo_urls))
-
-            for url in repo_urls:
-                existing = await session.execute(
-                    select(AutoPkgRepo).where(AutoPkgRepo.url == url)
-                )
-                if existing.scalar_one_or_none():
-                    continue
-
-                repo_name = url.rstrip("/").split("/")[-1].replace(".git", "")
-                session.add(AutoPkgRepo(url=url, name=repo_name))
 
         await create_audit_entry(
             session,
@@ -329,9 +286,7 @@ def app():
     parser = argparse.ArgumentParser(description="AutoMunki CLI")
     subparsers = parser.add_subparsers(dest="command")
 
-    import_parser = subparsers.add_parser(
-        "import-repo", help="Import a Munki repo into the database"
-    )
+    import_parser = subparsers.add_parser("import-repo", help="Import a Munki repo into the database")
     import_parser.add_argument("path", help="Path to the Munki repo root")
 
     args = parser.parse_args()

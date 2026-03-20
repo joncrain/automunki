@@ -14,7 +14,7 @@ from automunki.api.routes.manifests import router as manifests_router
 from automunki.api.routes.pkginfo import router as pkginfo_router
 from automunki.api.routes.repo import router as repo_router
 from automunki.api.routes.reports import router as reports_router
-from automunki.api.routes.sync import router as sync_router
+from automunki.api.routes.settings import router as settings_router
 from automunki.core.config import settings
 from automunki.core.middleware import RequestIDMiddleware
 
@@ -70,9 +70,9 @@ app.include_router(pkginfo_router, prefix=api_prefix)
 app.include_router(catalogs_router, prefix=api_prefix)
 app.include_router(manifests_router, prefix=api_prefix)
 app.include_router(autopkg_router, prefix=api_prefix)
-app.include_router(sync_router, prefix=api_prefix)
 app.include_router(reports_router, prefix=api_prefix)
 app.include_router(audit_router, prefix=api_prefix)
+app.include_router(settings_router, prefix=api_prefix)
 
 app.include_router(repo_router)
 

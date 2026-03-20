@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import { useState } from 'react'
 import { avatarColor, initials } from '@/lib/format'
 
@@ -49,7 +48,7 @@ export function SoftwareIcon({
     <div
       className={`flex shrink-0 items-center justify-center overflow-hidden font-bold ${sizeClass} ${avatarColor(name)} ${className}`}
     >
-      <Image
+      <img
         width={48}
         height={48}
         src={iconUrl(candidateName)}

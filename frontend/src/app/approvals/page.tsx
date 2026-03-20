@@ -1,7 +1,13 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle, ShieldAlert, XCircle } from 'lucide-react'
+import {
+  CheckCircle,
+  ExternalLink,
+  Loader2,
+  ShieldAlert,
+  XCircle,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,20 +18,113 @@ import {
   api,
   type RunResultRead,
   type TrustChangeRequestRead,
+  type TrustCommitResolveResponse,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import {
+  githubBlobUrlForTrustEntry,
+  trustRepoPathForTrustEntry,
+} from '@/lib/trust-github'
+
+function TrustCommitLink({
+  repo,
+  path,
+  change,
+  oldSha256,
+  newSha256,
+}: {
+  repo: string
+  path: string
+  change: string
+  oldSha256?: string
+  newSha256?: string
+}) {
+  const canResolve =
+    (change === 'modified' && Boolean(oldSha256) && Boolean(newSha256)) ||
+    (change === 'added' && Boolean(newSha256))
+
+  const { data, isPending, isError } = useQuery({
+    queryKey: [
+      'trust-resolve-commit',
+      repo,
+      path,
+      change,
+      oldSha256,
+      newSha256,
+    ],
+    queryFn: () =>
+      api.post<TrustCommitResolveResponse>('/autopkg/trust/resolve-commit', {
+        github_repo: repo,
+        github_path: path,
+        old_sha256: change === 'modified' ? oldSha256 : null,
+        new_sha256: newSha256,
+      }),
+    enabled: canResolve,
+    staleTime: 86_400_000,
+  })
+
+  if (!canResolve) return null
+  if (isPending) {
+    return (
+      <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
+        Looking up commit…
+      </p>
+    )
+  }
+  if (isError || !data?.commit_url) return null
+  return (
+    <p className="mt-1">
+      <a
+        href={data.commit_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+      >
+        <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
+        View introducing commit
+      </a>
+    </p>
+  )
+}
 
 function DiffEntry({
   name,
   info,
+  fileUrl,
+  trustLocation,
 }: {
   name: string
   info: Record<string, string>
+  fileUrl: string | null
+  trustLocation: { github_repo: string; github_path: string } | null
 }) {
   return (
     <div className="rounded-md border bg-muted/30 px-3 py-2 mb-1">
       <p className="font-mono text-sm font-medium">{name}</p>
-      <p className="text-xs text-muted-foreground">
+      {fileUrl && (
+        <p className="mt-1">
+          <a
+            href={fileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
+            View file on GitHub
+          </a>
+        </p>
+      )}
+      {trustLocation && (
+        <TrustCommitLink
+          repo={trustLocation.github_repo}
+          path={trustLocation.github_path}
+          change={info.change}
+          oldSha256={info.old_sha256}
+          newSha256={info.new_sha256}
+        />
+      )}
+      <p className="text-xs text-muted-foreground mt-1">
         Change:{' '}
         <Badge
           variant={info.change === 'not_found' ? 'destructive' : 'outline'}
@@ -54,7 +153,15 @@ function DiffEntry({
   )
 }
 
-function TrustDiffViewer({ diff }: { diff: Record<string, unknown> | null }) {
+function TrustDiffViewer({
+  diff,
+  oldTrustInfo,
+  newTrustInfo,
+}: {
+  diff: Record<string, unknown> | null
+  oldTrustInfo?: unknown
+  newTrustInfo?: unknown
+}) {
   if (!diff) return null
 
   const parentDiff = (diff.parent_recipes ?? {}) as Record<
@@ -83,7 +190,23 @@ function TrustDiffViewer({ diff }: { diff: Record<string, unknown> | null }) {
             Parent Recipes
           </h5>
           {Object.entries(parentDiff).map(([key, info]) => (
-            <DiffEntry key={key} name={key} info={info} />
+            <DiffEntry
+              key={key}
+              name={key}
+              info={info}
+              fileUrl={githubBlobUrlForTrustEntry(
+                oldTrustInfo,
+                newTrustInfo,
+                'parent_recipes',
+                key,
+              )}
+              trustLocation={trustRepoPathForTrustEntry(
+                oldTrustInfo,
+                newTrustInfo,
+                'parent_recipes',
+                key,
+              )}
+            />
           ))}
         </div>
       )}
@@ -93,7 +216,23 @@ function TrustDiffViewer({ diff }: { diff: Record<string, unknown> | null }) {
             Non-Core Processors
           </h5>
           {Object.entries(procDiff).map(([key, info]) => (
-            <DiffEntry key={key} name={key} info={info} />
+            <DiffEntry
+              key={key}
+              name={key}
+              info={info}
+              fileUrl={githubBlobUrlForTrustEntry(
+                oldTrustInfo,
+                newTrustInfo,
+                'non_core_processors',
+                key,
+              )}
+              trustLocation={trustRepoPathForTrustEntry(
+                oldTrustInfo,
+                newTrustInfo,
+                'non_core_processors',
+                key,
+              )}
+            />
           ))}
         </div>
       )}
@@ -220,105 +359,117 @@ export default function ApprovalsPage() {
                 No import approvals pending.
               </p>
             ) : (
-              approvals?.map((item) => (
-                <Card
-                  key={item.id}
-                  className="border-l-4 border-l-gruvbox-yellow/40"
-                >
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span>{item.recipe_name}</span>
-                        <Badge
-                          variant={
-                            item.status === 'imported'
-                              ? 'default'
-                              : item.status === 'trust_failed'
-                                ? 'destructive'
-                                : 'secondary'
-                          }
-                        >
-                          {item.status}
-                        </Badge>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="default"
-                          aria-label={`Approve ${item.recipe_name}`}
-                          onClick={() =>
-                            approveMutation.mutate({
-                              id: item.id,
-                              approved: true,
-                            })
-                          }
-                          disabled={approveMutation.isPending}
-                        >
-                          <CheckCircle className="mr-1 h-4 w-4" />
-                          Approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          aria-label={`Reject ${item.recipe_name}`}
-                          onClick={() =>
-                            approveMutation.mutate({
-                              id: item.id,
-                              approved: false,
-                            })
-                          }
-                          disabled={approveMutation.isPending}
-                        >
-                          <XCircle className="mr-1 h-4 w-4" />
-                          Reject
-                        </Button>
-                      </div>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-2 md:grid-cols-3">
-                    {item.imported_version && (
-                      <div>
-                        <span className="text-sm text-muted-foreground">
-                          Version
-                        </span>
-                        <p className="font-mono">{item.imported_version}</p>
-                      </div>
-                    )}
-                    {item.imported_catalogs && (
-                      <div>
-                        <span className="text-sm text-muted-foreground">
-                          Catalogs
-                        </span>
-                        <div className="mt-1 flex gap-1">
-                          {item.imported_catalogs.map((c) => (
-                            <Badge key={c} variant="secondary">
-                              {c}
+              approvals?.map((item) => {
+                const title =
+                  item.imported_display_name?.trim() || item.recipe_name
+                return (
+                  <Card
+                    key={item.id}
+                    className="border-l-4 border-l-gruvbox-yellow/40"
+                  >
+                    <CardHeader>
+                      <CardTitle className="flex flex-col gap-3 text-left sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="truncate">{title}</span>
+                            <Badge
+                              variant={
+                                item.status === 'imported'
+                                  ? 'default'
+                                  : item.status === 'trust_failed'
+                                    ? 'destructive'
+                                    : 'secondary'
+                              }
+                            >
+                              {item.status}
                             </Badge>
-                          ))}
+                          </div>
+                          {item.imported_display_name &&
+                            item.recipe_name !== item.imported_display_name && (
+                              <p className="text-xs font-normal text-muted-foreground font-mono">
+                                Report: {item.recipe_name}
+                              </p>
+                            )}
                         </div>
-                      </div>
-                    )}
-                    <div>
-                      <span className="text-sm text-muted-foreground">
-                        Date
-                      </span>
-                      <p suppressHydrationWarning>
-                        {formatDateTime(item.created_at)}
-                      </p>
-                    </div>
-                    {item.error_message && (
-                      <div className="col-span-full">
+                        <div className="flex shrink-0 gap-2">
+                          <Button
+                            size="sm"
+                            variant="default"
+                            aria-label={`Approve ${title}`}
+                            onClick={() =>
+                              approveMutation.mutate({
+                                id: item.id,
+                                approved: true,
+                              })
+                            }
+                            disabled={approveMutation.isPending}
+                          >
+                            <CheckCircle className="mr-1 h-4 w-4" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            aria-label={`Reject ${title}`}
+                            onClick={() =>
+                              approveMutation.mutate({
+                                id: item.id,
+                                approved: false,
+                              })
+                            }
+                            disabled={approveMutation.isPending}
+                          >
+                            <XCircle className="mr-1 h-4 w-4" />
+                            Reject
+                          </Button>
+                        </div>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-2 md:grid-cols-3">
+                      {item.imported_version && (
+                        <div>
+                          <span className="text-sm text-muted-foreground">
+                            Version
+                          </span>
+                          <p className="font-mono">{item.imported_version}</p>
+                        </div>
+                      )}
+                      {item.imported_catalogs && (
+                        <div>
+                          <span className="text-sm text-muted-foreground">
+                            Catalogs
+                          </span>
+                          <div className="mt-1 flex gap-1">
+                            {item.imported_catalogs.map((c) => (
+                              <Badge key={c} variant="secondary">
+                                {c}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div>
                         <span className="text-sm text-muted-foreground">
-                          Error
+                          Date
                         </span>
-                        <pre className="mt-1 overflow-auto rounded-md bg-muted p-2 text-sm">
-                          {item.error_message}
-                        </pre>
+                        <p suppressHydrationWarning>
+                          {formatDateTime(item.created_at)}
+                        </p>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))
+                      {item.error_message && (
+                        <div className="col-span-full">
+                          <span className="text-sm text-muted-foreground">
+                            Error
+                          </span>
+                          <pre className="mt-1 overflow-auto rounded-md bg-muted p-2 text-sm">
+                            {item.error_message}
+                          </pre>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )
+              })
             )}
           </TabsContent>
 
@@ -407,6 +558,10 @@ export default function ApprovalsPage() {
                         <div className="mt-2">
                           <TrustDiffViewer
                             diff={change.diff as Record<string, unknown> | null}
+                            oldTrustInfo={
+                              change.old_trust_info ?? recipe?.trust_info
+                            }
+                            newTrustInfo={change.new_trust_info}
                           />
                         </div>
                       </div>

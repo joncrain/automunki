@@ -44,6 +44,18 @@ const STATUS_OPTIONS = [
   'cancelled',
 ]
 
+/** Trust failed / pending approval: excluded from runner config and cannot be selected. */
+function canTriggerRunRecipe(recipe: AutoPkgRecipeRead): boolean {
+  return (
+    recipe.trust_status !== 'failed' &&
+    recipe.trust_status !== 'pending_approval'
+  )
+}
+
+function lastRecipeRunLooksOk(status: string): boolean {
+  return ['success', 'imported', 'no_change'].includes(status)
+}
+
 const statusVariant = (status: string) => {
   switch (status) {
     case 'completed':
@@ -91,6 +103,8 @@ export default function AutoPkgRunsPage() {
     onSuccess: () => {
       toast.success('AutoPkg run triggered')
       queryClient.invalidateQueries({ queryKey: ['autopkg-runs'] })
+      queryClient.invalidateQueries({ queryKey: ['autopkg-recipes'] })
+      queryClient.invalidateQueries({ queryKey: ['autopkg-recipes-enabled'] })
     },
     onError: (err: Error) =>
       toast.error(`Failed to trigger run: ${err.message}`),
@@ -250,19 +264,33 @@ function RecipeCheckItem({
   recipe,
   checked,
   onToggle,
+  canRun,
 }: {
   recipe: AutoPkgRecipeRead
   checked: boolean
   onToggle: () => void
+  canRun: boolean
 }) {
   return (
     <div
       role="option"
       aria-selected={checked}
-      tabIndex={0}
-      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
-      onClick={onToggle}
+      tabIndex={canRun ? 0 : -1}
+      title={
+        canRun
+          ? undefined
+          : 'Trust is failed or pending approval — resolve trust before running'
+      }
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left ${
+        canRun
+          ? 'cursor-pointer hover:bg-accent'
+          : 'cursor-not-allowed opacity-60'
+      }`}
+      onClick={() => {
+        if (canRun) onToggle()
+      }}
       onKeyDown={(e) => {
+        if (!canRun) return
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onToggle()
@@ -271,16 +299,24 @@ function RecipeCheckItem({
     >
       <Checkbox
         checked={checked}
+        disabled={!canRun}
         tabIndex={-1}
         className="pointer-events-none"
       />
       <span className="flex-1 truncate text-sm">{recipe.name}</span>
+      {!canRun && (
+        <Badge variant="secondary" className="shrink-0 text-xs">
+          trust blocked
+        </Badge>
+      )}
       {recipe.last_run_status && (
         <Badge
           variant={
-            recipe.last_run_status === 'success' ? 'default' : 'destructive'
+            lastRecipeRunLooksOk(recipe.last_run_status)
+              ? 'default'
+              : 'destructive'
           }
-          className="text-xs"
+          className="shrink-0 text-xs"
         >
           {recipe.last_run_status}
         </Badge>
@@ -314,6 +350,8 @@ function TriggerRunDialog({
       : true,
   )
 
+  const runnableInFilter = filtered.filter(canTriggerRunRecipe)
+
   const toggleRecipe = (name: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -324,15 +362,29 @@ function TriggerRunDialog({
   }
 
   const toggleAll = () => {
-    if (selected.size === filtered.length) {
+    const allRunnableSelected =
+      runnableInFilter.length > 0 &&
+      runnableInFilter.every((r) => selected.has(r.name))
+    if (allRunnableSelected) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(filtered.map((r) => r.name)))
+      setSelected(new Set(runnableInFilter.map((r) => r.name)))
     }
   }
 
   const handleTrigger = () => {
-    const names = selected.size > 0 ? Array.from(selected) : null
+    let names: string[] | null = null
+    if (selected.size > 0) {
+      const runnableNames = [...selected].filter((n) => {
+        const r = recipes?.find((x) => x.name === n)
+        return r && canTriggerRunRecipe(r)
+      })
+      if (runnableNames.length === 0) {
+        toast.error('Selected recipes cannot run until trust is resolved')
+        return
+      }
+      names = runnableNames
+    }
     onTrigger(names)
     setOpen(false)
     setSelected(new Set())
@@ -351,7 +403,9 @@ function TriggerRunDialog({
         <DialogHeader>
           <DialogTitle>Trigger AutoPkg Run</DialogTitle>
           <DialogDescription>
-            Select specific recipes or run all enabled recipes.
+            Select specific recipes or run all enabled overrides. Recipes with
+            failed or pending trust cannot run until trust is verified or
+            approved.
           </DialogDescription>
         </DialogHeader>
 
@@ -370,12 +424,20 @@ function TriggerRunDialog({
             <div
               role="option"
               aria-selected={
-                filtered.length > 0 && selected.size === filtered.length
+                runnableInFilter.length > 0 &&
+                runnableInFilter.every((r) => selected.has(r.name))
               }
-              tabIndex={0}
-              className="flex cursor-pointer items-center gap-2 text-sm"
-              onClick={toggleAll}
+              tabIndex={runnableInFilter.length > 0 ? 0 : -1}
+              className={`flex items-center gap-2 text-sm ${
+                runnableInFilter.length > 0
+                  ? 'cursor-pointer'
+                  : 'cursor-not-allowed opacity-60'
+              }`}
+              onClick={() => {
+                if (runnableInFilter.length > 0) toggleAll()
+              }}
               onKeyDown={(e) => {
+                if (runnableInFilter.length === 0) return
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
                   toggleAll()
@@ -384,13 +446,15 @@ function TriggerRunDialog({
             >
               <Checkbox
                 checked={
-                  filtered.length > 0 && selected.size === filtered.length
+                  runnableInFilter.length > 0 &&
+                  runnableInFilter.every((r) => selected.has(r.name))
                 }
+                disabled={runnableInFilter.length === 0}
                 tabIndex={-1}
                 className="pointer-events-none"
-                aria-label="Select all recipes"
+                aria-label="Select all runnable recipes"
               />
-              Select all ({filtered.length})
+              Select all runnable ({runnableInFilter.length})
             </div>
             {selected.size > 0 && (
               <span className="text-sm text-muted-foreground">
@@ -405,14 +469,23 @@ function TriggerRunDialog({
                 No enabled recipes found.
               </p>
             ) : (
-              filtered.map((recipe) => (
-                <RecipeCheckItem
-                  key={recipe.id}
-                  recipe={recipe}
-                  checked={selected.has(recipe.name)}
-                  onToggle={() => toggleRecipe(recipe.name)}
-                />
-              ))
+              <>
+                {runnableInFilter.length === 0 && (
+                  <p className="mb-2 rounded-md border border-dashed bg-muted/40 px-2 py-2 text-center text-xs text-muted-foreground">
+                    Nothing here is runnable — trust is failed or pending for
+                    every match.
+                  </p>
+                )}
+                {filtered.map((recipe) => (
+                  <RecipeCheckItem
+                    key={recipe.id}
+                    recipe={recipe}
+                    checked={selected.has(recipe.name)}
+                    onToggle={() => toggleRecipe(recipe.name)}
+                    canRun={canTriggerRunRecipe(recipe)}
+                  />
+                ))}
+              </>
             )}
           </div>
         </div>
@@ -475,7 +548,9 @@ function RunDetail({ run }: { run: AutoPkgRunRead }) {
                 <Badge variant={statusVariantResult(result.status)}>
                   {result.status}
                 </Badge>
-                <span className="font-medium">{result.recipe_name}</span>
+                <span className="font-medium">
+                  {result.imported_display_name?.trim() || result.recipe_name}
+                </span>
                 {result.imported_version && (
                   <span className="text-sm text-muted-foreground">
                     v{result.imported_version}

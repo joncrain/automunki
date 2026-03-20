@@ -28,6 +28,25 @@ def make_serializable(obj):
     return obj
 
 
+def imported_display_title(item, pkgsinfo_dir, recipe_name):
+    """Human-facing title for approvals UI (pkg display name, not report filename)."""
+    name = item.get("display_name") or item.get("name")
+    if name:
+        return str(name)
+    pkginfo_path = item.get("pkginfo_path", "")
+    if pkginfo_path and pkgsinfo_dir:
+        full_path = os.path.join(pkgsinfo_dir, pkginfo_path)
+        if os.path.exists(full_path):
+            with open(full_path, "rb") as pf:
+                pkginfo_dict = plistlib.load(pf)
+            return str(
+                pkginfo_dict.get("display_name")
+                or pkginfo_dict.get("name")
+                or recipe_name
+            )
+    return recipe_name
+
+
 def post_json(url, payload):
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
@@ -76,6 +95,9 @@ def main():
                 "recipe_name": recipe_name,
                 "status": "imported",
                 "imported_version": item.get("version"),
+                "imported_display_name": imported_display_title(
+                    item, pkgsinfo_dir, recipe_name
+                ),
                 "imported_pkg_path": item.get("pkg_repo_path"),
                 "imported_pkginfo_path": item.get("pkginfo_path"),
                 "imported_catalogs": catalogs,

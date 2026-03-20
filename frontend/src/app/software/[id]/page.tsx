@@ -1,7 +1,7 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Pencil, Plus, Save, X } from 'lucide-react'
+import { Download, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -32,6 +32,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
@@ -39,7 +46,10 @@ import {
   type AuditLogRead,
   api,
   type CatalogRead,
+  type InstallItem,
+  type ItemToCopy,
   type PkgInfoDetail,
+  type ReceiptItem,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 
@@ -51,13 +61,37 @@ interface EditableFields {
   icon_name: string
   minimum_os_version: string
   maximum_os_version: string
+  uninstall_method: string
   unattended_install: boolean
   unattended_uninstall: boolean
   autoremove: boolean
   uninstallable: boolean
   blocking_applications: string[]
+  supported_architectures: string[]
   requires: string[]
   update_for: string[]
+  installs: InstallItem[]
+  receipts: ReceiptItem[]
+  items_to_copy: ItemToCopy[]
+  installcheck_script: string
+  uninstallcheck_script: string
+  version_script: string
+  preinstall_script: string
+  postinstall_script: string
+  preuninstall_script: string
+  postuninstall_script: string
+  notes: string
+  restart_action: string
+  on_demand: boolean
+  force_install_after_date: string
+  apple_item: boolean
+  installable_condition: string
+  package_path: string
+  package_complete_url: string
+  minimum_munki_version: string
+  installer_type: string
+  installed_size: number | null
+  uninstaller_item_location: string
 }
 
 function pkgToEditable(pkg: PkgInfoDetail): EditableFields {
@@ -69,13 +103,37 @@ function pkgToEditable(pkg: PkgInfoDetail): EditableFields {
     icon_name: pkg.icon_name ?? '',
     minimum_os_version: pkg.minimum_os_version ?? '',
     maximum_os_version: pkg.maximum_os_version ?? '',
+    uninstall_method: pkg.uninstall_method ?? '',
     unattended_install: pkg.unattended_install,
     unattended_uninstall: pkg.unattended_uninstall,
     autoremove: pkg.autoremove,
     uninstallable: pkg.uninstallable,
     blocking_applications: pkg.blocking_applications ?? [],
+    supported_architectures: pkg.supported_architectures ?? [],
     requires: pkg.requires ?? [],
     update_for: pkg.update_for ?? [],
+    installs: pkg.installs ?? [],
+    receipts: pkg.receipts ?? [],
+    items_to_copy: pkg.items_to_copy ?? [],
+    installcheck_script: pkg.installcheck_script ?? '',
+    uninstallcheck_script: pkg.uninstallcheck_script ?? '',
+    version_script: pkg.version_script ?? '',
+    preinstall_script: pkg.preinstall_script ?? '',
+    postinstall_script: pkg.postinstall_script ?? '',
+    preuninstall_script: pkg.preuninstall_script ?? '',
+    postuninstall_script: pkg.postuninstall_script ?? '',
+    notes: pkg.notes ?? '',
+    restart_action: pkg.restart_action ?? '',
+    on_demand: pkg.on_demand,
+    force_install_after_date: pkg.force_install_after_date ?? '',
+    apple_item: pkg.apple_item,
+    installable_condition: pkg.installable_condition ?? '',
+    package_path: pkg.package_path ?? '',
+    package_complete_url: pkg.package_complete_url ?? '',
+    minimum_munki_version: pkg.minimum_munki_version ?? '',
+    installer_type: pkg.installer_type ?? '',
+    installed_size: pkg.installed_size,
+    uninstaller_item_location: pkg.uninstaller_item_location ?? '',
   }
 }
 
@@ -90,13 +148,15 @@ function buildUpdatePayload(
     if (Array.isArray(o) && Array.isArray(e)) {
       if (JSON.stringify(o) !== JSON.stringify(e)) payload[key] = e
     } else if (o !== e) {
-      payload[key] = e === '' ? null : e
+      if (typeof e === 'string') {
+        payload[key] = e === '' ? null : e
+      } else {
+        payload[key] = e
+      }
     }
   }
   return payload
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export default function SoftwareDetailPage() {
   const params = useParams()
@@ -179,9 +239,7 @@ export default function SoftwareDetailPage() {
       const headers: Record<string, string> = {}
       if (token) headers.Authorization = `Bearer ${token}`
 
-      const res = await fetch(`${API_BASE}/api/v1/pkginfo/${id}/plist`, {
-        headers,
-      })
+      const res = await fetch(`/api/v1/pkginfo/${id}/plist`, { headers })
       if (!res.ok) throw new Error('Failed to fetch plist')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -285,260 +343,576 @@ export default function SoftwareDetailPage() {
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="detection">Detection</TabsTrigger>
           <TabsTrigger value="install">Install Info</TabsTrigger>
           <TabsTrigger value="scripts">Scripts</TabsTrigger>
           <TabsTrigger value="audit">Audit Trail</TabsTrigger>
         </TabsList>
 
+        {/* ── Details Tab ── */}
         <TabsContent value="details" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>General Information</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <InfoField
-                label="Name"
-                value={pkg.name}
-                readOnly
-                editing={false}
-              />
-              <EditableField
-                label="Display Name"
-                value={form?.display_name ?? ''}
-                editing={editing}
-                onChange={(v) => updateField('display_name', v)}
-              />
-              <InfoField
-                label="Version"
-                value={pkg.version}
-                readOnly
-                editing={false}
-              />
-              <EditableField
-                label="Category"
-                value={form?.category ?? ''}
-                editing={editing}
-                onChange={(v) => updateField('category', v)}
-              />
-              <EditableField
-                label="Developer"
-                value={form?.developer ?? ''}
-                editing={editing}
-                onChange={(v) => updateField('developer', v)}
-              />
-              <EditableField
-                label="Icon Name"
-                value={form?.icon_name ?? ''}
-                editing={editing}
-                onChange={(v) => updateField('icon_name', v)}
-              />
-              {editing ? (
-                <div className="col-span-full">
-                  <Label>Description</Label>
-                  <Textarea
-                    className="mt-1"
-                    value={form?.description ?? ''}
-                    onChange={(e) => updateField('description', e.target.value)}
-                    rows={3}
-                  />
-                </div>
-              ) : (
-                <div className="col-span-full">
-                  <span className="text-sm font-medium text-muted-foreground">
-                    Description
-                  </span>
-                  <p className="mt-1">{pkg.description || '—'}</p>
-                </div>
-              )}
-              <EditableField
-                label="Minimum OS"
-                value={form?.minimum_os_version ?? ''}
-                editing={editing}
-                onChange={(v) => updateField('minimum_os_version', v)}
-              />
-              <EditableField
-                label="Maximum OS"
-                value={form?.maximum_os_version ?? ''}
-                editing={editing}
-                onChange={(v) => updateField('maximum_os_version', v)}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Install Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <BooleanField
-                label="Unattended Install"
-                value={form?.unattended_install ?? false}
-                editing={editing}
-                onChange={(v) => updateField('unattended_install', v)}
-              />
-              <BooleanField
-                label="Unattended Uninstall"
-                value={form?.unattended_uninstall ?? false}
-                editing={editing}
-                onChange={(v) => updateField('unattended_uninstall', v)}
-              />
-              <BooleanField
-                label="Auto Remove"
-                value={form?.autoremove ?? false}
-                editing={editing}
-                onChange={(v) => updateField('autoremove', v)}
-              />
-              <BooleanField
-                label="Uninstallable"
-                value={form?.uninstallable ?? true}
-                editing={editing}
-                onChange={(v) => updateField('uninstallable', v)}
-              />
-              <InfoField
-                label="Uninstall Method"
-                value={pkg.uninstall_method}
-                readOnly
-                editing={false}
-              />
-              <InfoField
-                label="Installer Type"
-                value={pkg.installer_type}
-                readOnly
-                editing={false}
-              />
-            </CardContent>
-          </Card>
-
-          {editing && (
+          <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Array Fields</CardTitle>
+                <CardTitle>General Information</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <ReadOnlyField label="Name" value={pkg.name} />
+                <EditableField
+                  label="Display Name"
+                  value={form?.display_name ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('display_name', v)}
+                />
+                <ReadOnlyField label="Version" value={pkg.version} />
+                <EditableField
+                  label="Category"
+                  value={form?.category ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('category', v)}
+                />
+                <EditableField
+                  label="Developer"
+                  value={form?.developer ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('developer', v)}
+                />
+                <EditableField
+                  label="Icon Name"
+                  value={form?.icon_name ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('icon_name', v)}
+                />
+                {editing ? (
+                  <div className="col-span-full">
+                    <Label>Description</Label>
+                    <Textarea
+                      className="mt-1"
+                      value={form?.description ?? ''}
+                      onChange={(e) =>
+                        updateField('description', e.target.value)
+                      }
+                      rows={3}
+                    />
+                  </div>
+                ) : (
+                  <div className="col-span-full">
+                    <span className="text-sm font-medium text-muted-foreground">
+                      Description
+                    </span>
+                    <p className="mt-1">{pkg.description || '—'}</p>
+                  </div>
+                )}
+                {editing ? (
+                  <div className="col-span-full">
+                    <Label>Notes</Label>
+                    <Textarea
+                      className="mt-1"
+                      value={form?.notes ?? ''}
+                      onChange={(e) => updateField('notes', e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                ) : (
+                  pkg.notes && (
+                    <div className="col-span-full">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        Notes
+                      </span>
+                      <p className="mt-1 whitespace-pre-wrap">{pkg.notes}</p>
+                    </div>
+                  )
+                )}
+                <EditableField
+                  label="Minimum OS"
+                  value={form?.minimum_os_version ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('minimum_os_version', v)}
+                />
+                <EditableField
+                  label="Maximum OS"
+                  value={form?.maximum_os_version ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('maximum_os_version', v)}
+                />
+                <EditableField
+                  label="Minimum Munki Version"
+                  value={form?.minimum_munki_version ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('minimum_munki_version', v)}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Install Configuration</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <BooleanField
+                  label="Unattended Install"
+                  value={form?.unattended_install ?? false}
+                  editing={editing}
+                  onChange={(v) => updateField('unattended_install', v)}
+                />
+                <BooleanField
+                  label="Unattended Uninstall"
+                  value={form?.unattended_uninstall ?? false}
+                  editing={editing}
+                  onChange={(v) => updateField('unattended_uninstall', v)}
+                />
+                <BooleanField
+                  label="Auto Remove"
+                  value={form?.autoremove ?? false}
+                  editing={editing}
+                  onChange={(v) => updateField('autoremove', v)}
+                />
+                <BooleanField
+                  label="Uninstallable"
+                  value={form?.uninstallable ?? true}
+                  editing={editing}
+                  onChange={(v) => updateField('uninstallable', v)}
+                />
+                <BooleanField
+                  label="OnDemand"
+                  value={form?.on_demand ?? false}
+                  editing={editing}
+                  onChange={(v) => updateField('on_demand', v)}
+                />
+                <BooleanField
+                  label="Apple Item"
+                  value={form?.apple_item ?? false}
+                  editing={editing}
+                  onChange={(v) => updateField('apple_item', v)}
+                />
+                {editing ? (
+                  <div>
+                    <Label>Restart Action</Label>
+                    <Select
+                      value={form?.restart_action ?? ''}
+                      onValueChange={(v) =>
+                        updateField('restart_action', v === 'none' ? '' : v)
+                      }
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="RequireRestart">
+                          RequireRestart
+                        </SelectItem>
+                        <SelectItem value="RecommendRestart">
+                          RecommendRestart
+                        </SelectItem>
+                        <SelectItem value="RequireLogout">
+                          RequireLogout
+                        </SelectItem>
+                        <SelectItem value="RequireShutdown">
+                          RequireShutdown
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <ReadOnlyField
+                    label="Restart Action"
+                    value={pkg.restart_action}
+                  />
+                )}
+                {editing ? (
+                  <EditableField
+                    label="Uninstall Method"
+                    value={form?.uninstall_method ?? ''}
+                    editing={editing}
+                    onChange={(v) => updateField('uninstall_method', v)}
+                  />
+                ) : (
+                  <ReadOnlyField
+                    label="Uninstall Method"
+                    value={pkg.uninstall_method}
+                  />
+                )}
+                {editing ? (
+                  <EditableField
+                    label="Installer Type"
+                    value={form?.installer_type ?? ''}
+                    editing={editing}
+                    onChange={(v) => updateField('installer_type', v)}
+                  />
+                ) : (
+                  <ReadOnlyField
+                    label="Installer Type"
+                    value={pkg.installer_type}
+                  />
+                )}
+                <EditableField
+                  label="Force Install After Date"
+                  value={form?.force_install_after_date ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('force_install_after_date', v)}
+                />
+                <EditableField
+                  label="Installable Condition"
+                  value={form?.installable_condition ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('installable_condition', v)}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Dependencies &amp; Relationships</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <TagField
-                  label="Blocking Applications"
-                  values={form?.blocking_applications ?? []}
-                  onChange={(v) => updateField('blocking_applications', v)}
-                />
-                <TagField
-                  label="Requires"
-                  values={form?.requires ?? []}
-                  onChange={(v) => updateField('requires', v)}
-                />
-                <TagField
-                  label="Update For"
-                  values={form?.update_for ?? []}
-                  onChange={(v) => updateField('update_for', v)}
-                />
+                {editing ? (
+                  <>
+                    <TagField
+                      label="Blocking Applications"
+                      values={form?.blocking_applications ?? []}
+                      onChange={(v) => updateField('blocking_applications', v)}
+                    />
+                    <TagField
+                      label="Supported Architectures"
+                      values={form?.supported_architectures ?? []}
+                      onChange={(v) =>
+                        updateField('supported_architectures', v)
+                      }
+                    />
+                    <TagField
+                      label="Requires"
+                      values={form?.requires ?? []}
+                      onChange={(v) => updateField('requires', v)}
+                    />
+                    <TagField
+                      label="Update For"
+                      values={form?.update_for ?? []}
+                      onChange={(v) => updateField('update_for', v)}
+                    />
+                  </>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <TagDisplay
+                      label="Blocking Applications"
+                      values={pkg.blocking_applications}
+                    />
+                    <TagDisplay
+                      label="Supported Architectures"
+                      values={pkg.supported_architectures}
+                    />
+                    <TagDisplay label="Requires" values={pkg.requires} />
+                    <TagDisplay label="Update For" values={pkg.update_for} />
+                  </div>
+                )}
               </CardContent>
             </Card>
-          )}
+          </div>
         </TabsContent>
-
-        <TabsContent value="install" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Installer Details</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <InfoField
-                label="Location"
-                value={pkg.installer_item_location}
-                readOnly
-                editing={false}
-              />
-              <InfoField
-                label="Hash (SHA256)"
-                value={pkg.installer_item_hash}
-                readOnly
-                editing={false}
-              />
-              <InfoField
-                label="Size"
-                value={
-                  pkg.installer_item_size
-                    ? `${Math.round(pkg.installer_item_size / 1024)} MB`
-                    : null
-                }
-                readOnly
-                editing={false}
-              />
-              {!editing && pkg.blocking_applications && (
-                <div>
-                  <span className="text-sm font-medium text-muted-foreground">
-                    Blocking Applications
-                  </span>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {pkg.blocking_applications.map((app) => (
-                      <Badge key={app} variant="outline">
-                        {app}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {!editing && pkg.requires && (
-                <div>
-                  <span className="text-sm font-medium text-muted-foreground">
-                    Requires
-                  </span>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {pkg.requires.map((r) => (
-                      <Badge key={r} variant="outline">
-                        {r}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {pkg.installs != null && (
+        {/* ── Detection Tab ── */}
+        <TabsContent value="detection" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Installs Detection</CardTitle>
+                <CardTitle>Installs Items</CardTitle>
               </CardHeader>
               <CardContent>
-                <pre className="overflow-auto rounded-md bg-muted p-4 text-sm">
-                  {JSON.stringify(pkg.installs, null, 2)}
-                </pre>
+                {editing ? (
+                  <InstallsEditor
+                    items={form?.installs ?? []}
+                    onChange={(v) => updateField('installs', v)}
+                  />
+                ) : (form?.installs?.length ?? 0) > 0 ? (
+                  <div className="space-y-2">
+                    {(form?.installs ?? pkg.installs ?? []).map((item, i) => (
+                      <div key={i} className="rounded-md border p-3 text-sm">
+                        <div className="grid gap-2 md:grid-cols-3">
+                          {item.type && (
+                            <div>
+                              <span className="font-medium text-muted-foreground">
+                                Type:
+                              </span>{' '}
+                              {item.type}
+                            </div>
+                          )}
+                          {item.path && (
+                            <div className="md:col-span-2">
+                              <span className="font-medium text-muted-foreground">
+                                Path:
+                              </span>{' '}
+                              <code className="text-xs">{item.path}</code>
+                            </div>
+                          )}
+                          {item.CFBundleIdentifier && (
+                            <div>
+                              <span className="font-medium text-muted-foreground">
+                                Bundle ID:
+                              </span>{' '}
+                              {item.CFBundleIdentifier}
+                            </div>
+                          )}
+                          {item.CFBundleShortVersionString && (
+                            <div>
+                              <span className="font-medium text-muted-foreground">
+                                Version:
+                              </span>{' '}
+                              {item.CFBundleShortVersionString}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No installs items configured
+                  </p>
+                )}
               </CardContent>
             </Card>
-          )}
 
-          {pkg.receipts != null && (
             <Card>
               <CardHeader>
                 <CardTitle>Receipts</CardTitle>
               </CardHeader>
               <CardContent>
-                <pre className="overflow-auto rounded-md bg-muted p-4 text-sm">
-                  {JSON.stringify(pkg.receipts, null, 2)}
-                </pre>
+                {editing ? (
+                  <ReceiptsEditor
+                    items={form?.receipts ?? []}
+                    onChange={(v) => updateField('receipts', v)}
+                  />
+                ) : (form?.receipts?.length ?? 0) > 0 ? (
+                  <div className="space-y-2">
+                    {(form?.receipts ?? pkg.receipts ?? []).map((item, i) => (
+                      <div key={i} className="rounded-md border p-3 text-sm">
+                        <div className="grid gap-2 md:grid-cols-3">
+                          {item.packageid && (
+                            <div>
+                              <span className="font-medium text-muted-foreground">
+                                Package ID:
+                              </span>{' '}
+                              {item.packageid}
+                            </div>
+                          )}
+                          {item.version && (
+                            <div>
+                              <span className="font-medium text-muted-foreground">
+                                Version:
+                              </span>{' '}
+                              {item.version}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No receipts configured
+                  </p>
+                )}
               </CardContent>
             </Card>
-          )}
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Detection Scripts</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ScriptField
+                  label="installcheck_script"
+                  value={
+                    editing
+                      ? (form?.installcheck_script ?? '')
+                      : (pkg.installcheck_script ?? '')
+                  }
+                  editing={editing}
+                  onChange={(v) => updateField('installcheck_script', v)}
+                  description="Runs before install to determine if the item needs to be installed. Exit 0 = needs install."
+                />
+                <ScriptField
+                  label="uninstallcheck_script"
+                  value={
+                    editing
+                      ? (form?.uninstallcheck_script ?? '')
+                      : (pkg.uninstallcheck_script ?? '')
+                  }
+                  editing={editing}
+                  onChange={(v) => updateField('uninstallcheck_script', v)}
+                  description="Runs before uninstall to determine if the item is installed. Exit 0 = is installed."
+                />
+                <ScriptField
+                  label="version_script"
+                  value={
+                    editing
+                      ? (form?.version_script ?? '')
+                      : (pkg.version_script ?? '')
+                  }
+                  editing={editing}
+                  onChange={(v) => updateField('version_script', v)}
+                  description="Outputs the installed version to stdout for comparison."
+                />
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
+        {/* ── Install Info Tab ── */}
+        <TabsContent value="install" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Installer Details</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <ReadOnlyField
+                  label="Location"
+                  value={pkg.installer_item_location}
+                />
+                <ReadOnlyField
+                  label="Hash (SHA256)"
+                  value={pkg.installer_item_hash}
+                />
+                <ReadOnlyField
+                  label="Installer Size"
+                  value={
+                    pkg.installer_item_size
+                      ? `${Math.round(pkg.installer_item_size / 1024)} MB`
+                      : null
+                  }
+                />
+                <ReadOnlyField
+                  label="Installed Size"
+                  value={
+                    pkg.installed_size
+                      ? `${Math.round(pkg.installed_size / 1024)} MB`
+                      : null
+                  }
+                />
+                <EditableField
+                  label="Package Path"
+                  value={form?.package_path ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('package_path', v)}
+                />
+                <EditableField
+                  label="Package Complete URL"
+                  value={form?.package_complete_url ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('package_complete_url', v)}
+                />
+                <EditableField
+                  label="Uninstaller Item Location"
+                  value={form?.uninstaller_item_location ?? ''}
+                  editing={editing}
+                  onChange={(v) => updateField('uninstaller_item_location', v)}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Items to Copy</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {editing ? (
+                  <ItemsToCopyEditor
+                    items={form?.items_to_copy ?? []}
+                    onChange={(v) => updateField('items_to_copy', v)}
+                  />
+                ) : (form?.items_to_copy?.length ?? 0) > 0 ? (
+                  <div className="space-y-2">
+                    {(form?.items_to_copy ?? pkg.items_to_copy ?? []).map(
+                      (item, i) => (
+                        <div key={i} className="rounded-md border p-3 text-sm">
+                          <div className="grid gap-2 md:grid-cols-2">
+                            {item.source_item && (
+                              <div>
+                                <span className="font-medium text-muted-foreground">
+                                  Source:
+                                </span>{' '}
+                                <code className="text-xs">
+                                  {item.source_item}
+                                </code>
+                              </div>
+                            )}
+                            {item.destination_path && (
+                              <div>
+                                <span className="font-medium text-muted-foreground">
+                                  Destination:
+                                </span>{' '}
+                                <code className="text-xs">
+                                  {item.destination_path}
+                                </code>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No items to copy configured
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* ── Scripts Tab ── */}
         <TabsContent value="scripts" className="space-y-4">
-          {pkg.preinstall_script && (
-            <ScriptCard
-              title="Pre-install Script"
-              script={pkg.preinstall_script}
-            />
-          )}
-          {pkg.postinstall_script && (
-            <ScriptCard
-              title="Post-install Script"
-              script={pkg.postinstall_script}
-            />
-          )}
-          {!pkg.preinstall_script && !pkg.postinstall_script && (
-            <p className="text-muted-foreground">No scripts configured</p>
-          )}
+          <ScriptField
+            label="preinstall_script"
+            value={
+              editing
+                ? (form?.preinstall_script ?? '')
+                : (pkg.preinstall_script ?? '')
+            }
+            editing={editing}
+            onChange={(v) => updateField('preinstall_script', v)}
+          />
+          <ScriptField
+            label="postinstall_script"
+            value={
+              editing
+                ? (form?.postinstall_script ?? '')
+                : (pkg.postinstall_script ?? '')
+            }
+            editing={editing}
+            onChange={(v) => updateField('postinstall_script', v)}
+          />
+          <ScriptField
+            label="preuninstall_script"
+            value={
+              editing
+                ? (form?.preuninstall_script ?? '')
+                : (pkg.preuninstall_script ?? '')
+            }
+            editing={editing}
+            onChange={(v) => updateField('preuninstall_script', v)}
+          />
+          <ScriptField
+            label="postuninstall_script"
+            value={
+              editing
+                ? (form?.postuninstall_script ?? '')
+                : (pkg.postuninstall_script ?? '')
+            }
+            editing={editing}
+            onChange={(v) => updateField('postuninstall_script', v)}
+          />
+          {!editing &&
+            !pkg.preinstall_script &&
+            !pkg.postinstall_script &&
+            !pkg.preuninstall_script &&
+            !pkg.postuninstall_script && (
+              <p className="text-muted-foreground">No scripts configured</p>
+            )}
         </TabsContent>
 
+        {/* ── Audit Trail Tab ── */}
         <TabsContent value="audit" className="space-y-4">
           {auditTrail?.length ? (
             <div className="space-y-2">
@@ -576,14 +950,14 @@ export default function SoftwareDetailPage() {
   )
 }
 
-function InfoField({
+/* ── Shared Field Components ── */
+
+function ReadOnlyField({
   label,
   value,
 }: {
   label: string
   value: string | null | undefined
-  readOnly: boolean
-  editing: boolean
 }) {
   return (
     <div>
@@ -717,20 +1091,395 @@ function TagField({
   )
 }
 
-function ScriptCard({ title, script }: { title: string; script: string }) {
+function TagDisplay({
+  label,
+  values,
+}: {
+  label: string
+  values: string[] | null | undefined
+}) {
+  if (!values?.length) {
+    return (
+      <div>
+        <span className="text-sm font-medium text-muted-foreground">
+          {label}
+        </span>
+        <p className="mt-1 text-sm text-muted-foreground">—</p>
+      </div>
+    )
+  }
+  return (
+    <div>
+      <span className="text-sm font-medium text-muted-foreground">{label}</span>
+      <div className="mt-1 flex flex-wrap gap-1">
+        {values.map((v) => (
+          <Badge key={v} variant="outline">
+            {v}
+          </Badge>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ScriptField({
+  label,
+  value,
+  editing,
+  onChange,
+  description,
+}: {
+  label: string
+  value: string
+  editing: boolean
+  onChange: (v: string) => void
+  description?: string
+}) {
+  if (!editing && !value) return null
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="text-base">{label}</CardTitle>
+        {description && (
+          <p className="text-sm text-muted-foreground">{description}</p>
+        )}
       </CardHeader>
       <CardContent>
-        <pre className="overflow-auto rounded-md bg-muted p-4 font-mono text-sm">
-          {script}
-        </pre>
+        {editing ? (
+          <Textarea
+            className="min-h-[120px] font-mono text-sm"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={`Enter ${label}...`}
+            rows={8}
+          />
+        ) : (
+          <pre className="overflow-auto rounded-md bg-muted p-4 font-mono text-sm">
+            {value}
+          </pre>
+        )}
       </CardContent>
     </Card>
   )
 }
+
+/* ── Installs Editor ── */
+
+const INSTALL_TYPES = [
+  'file',
+  'bundle',
+  'plist',
+  'application',
+  'launchd',
+  'startup_item',
+]
+
+function InstallsEditor({
+  items,
+  onChange,
+}: {
+  items: InstallItem[]
+  onChange: (items: InstallItem[]) => void
+}) {
+  const updateItem = (index: number, field: string, value: string) => {
+    const updated = [...items]
+    updated[index] = { ...updated[index], [field]: value }
+    onChange(updated)
+  }
+
+  const removeItem = (index: number) => {
+    onChange(items.filter((_, i) => i !== index))
+  }
+
+  const addItem = () => {
+    onChange([...items, { type: 'file', path: '' }])
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map((item, i) => (
+        <div key={i} className="rounded-md border p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-medium">Item {i + 1}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-destructive"
+              onClick={() => removeItem(i)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            <div>
+              <Label className="text-xs">Type</Label>
+              <Select
+                value={item.type ?? 'file'}
+                onValueChange={(v) => updateItem(i, 'type', v)}
+              >
+                <SelectTrigger className="mt-1 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INSTALL_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Path</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={item.path ?? ''}
+                onChange={(e) => updateItem(i, 'path', e.target.value)}
+                placeholder="/Applications/Example.app"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">CFBundleIdentifier</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={(item.CFBundleIdentifier as string) ?? ''}
+                onChange={(e) =>
+                  updateItem(i, 'CFBundleIdentifier', e.target.value)
+                }
+                placeholder="com.example.app"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">CFBundleShortVersionString</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={(item.CFBundleShortVersionString as string) ?? ''}
+                onChange={(e) =>
+                  updateItem(i, 'CFBundleShortVersionString', e.target.value)
+                }
+                placeholder="1.0.0"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">version_comparison_key</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={(item.version_comparison_key as string) ?? ''}
+                onChange={(e) =>
+                  updateItem(i, 'version_comparison_key', e.target.value)
+                }
+                placeholder="CFBundleShortVersionString"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">minosversion</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={(item.minosversion as string) ?? ''}
+                onChange={(e) => updateItem(i, 'minosversion', e.target.value)}
+                placeholder="10.15"
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+      <Button variant="outline" size="sm" onClick={addItem}>
+        <Plus className="mr-1 h-3.5 w-3.5" />
+        Add Install Item
+      </Button>
+    </div>
+  )
+}
+
+/* ── Receipts Editor ── */
+
+function ReceiptsEditor({
+  items,
+  onChange,
+}: {
+  items: ReceiptItem[]
+  onChange: (items: ReceiptItem[]) => void
+}) {
+  const updateItem = (
+    index: number,
+    field: string,
+    value: string | boolean,
+  ) => {
+    const updated = [...items]
+    updated[index] = { ...updated[index], [field]: value }
+    onChange(updated)
+  }
+
+  const removeItem = (index: number) => {
+    onChange(items.filter((_, i) => i !== index))
+  }
+
+  const addItem = () => {
+    onChange([...items, { packageid: '', version: '' }])
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map((item, i) => (
+        <div key={i} className="rounded-md border p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-medium">Receipt {i + 1}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-destructive"
+              onClick={() => removeItem(i)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="grid gap-2 md:grid-cols-3">
+            <div>
+              <Label className="text-xs">Package ID</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={item.packageid ?? ''}
+                onChange={(e) => updateItem(i, 'packageid', e.target.value)}
+                placeholder="com.example.pkg"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Version</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={item.version ?? ''}
+                onChange={(e) => updateItem(i, 'version', e.target.value)}
+                placeholder="1.0.0"
+              />
+            </div>
+            <div className="flex items-end gap-2 pb-0.5">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={item.optional ?? false}
+                  onCheckedChange={(v) => updateItem(i, 'optional', v)}
+                />
+                <Label className="text-xs">Optional</Label>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+      <Button variant="outline" size="sm" onClick={addItem}>
+        <Plus className="mr-1 h-3.5 w-3.5" />
+        Add Receipt
+      </Button>
+    </div>
+  )
+}
+
+/* ── Items to Copy Editor ── */
+
+function ItemsToCopyEditor({
+  items,
+  onChange,
+}: {
+  items: ItemToCopy[]
+  onChange: (items: ItemToCopy[]) => void
+}) {
+  const updateItem = (index: number, field: string, value: string) => {
+    const updated = [...items]
+    updated[index] = { ...updated[index], [field]: value }
+    onChange(updated)
+  }
+
+  const removeItem = (index: number) => {
+    onChange(items.filter((_, i) => i !== index))
+  }
+
+  const addItem = () => {
+    onChange([...items, { source_item: '', destination_path: '' }])
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map((item, i) => (
+        <div key={i} className="rounded-md border p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-medium">Item {i + 1}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-destructive"
+              onClick={() => removeItem(i)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            <div>
+              <Label className="text-xs">Source Item</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={item.source_item ?? ''}
+                onChange={(e) => updateItem(i, 'source_item', e.target.value)}
+                placeholder="Example.app"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Destination Path</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={item.destination_path ?? ''}
+                onChange={(e) =>
+                  updateItem(i, 'destination_path', e.target.value)
+                }
+                placeholder="/Applications"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Destination Item</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={item.destination_item ?? ''}
+                onChange={(e) =>
+                  updateItem(i, 'destination_item', e.target.value)
+                }
+              />
+            </div>
+            <div>
+              <Label className="text-xs">User</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={item.user ?? ''}
+                onChange={(e) => updateItem(i, 'user', e.target.value)}
+                placeholder="root"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Group</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={item.group ?? ''}
+                onChange={(e) => updateItem(i, 'group', e.target.value)}
+                placeholder="admin"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Mode</Label>
+              <Input
+                className="mt-1 h-8 text-xs"
+                value={item.mode ?? ''}
+                onChange={(e) => updateItem(i, 'mode', e.target.value)}
+                placeholder="o-w"
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+      <Button variant="outline" size="sm" onClick={addItem}>
+        <Plus className="mr-1 h-3.5 w-3.5" />
+        Add Item to Copy
+      </Button>
+    </div>
+  )
+}
+
+/* ── Catalog Editor ── */
 
 function CatalogEditor({
   pkgId,

@@ -34,6 +34,10 @@ def _to_summary(pkg: PkgInfo) -> dict:
         "developer": pkg.developer,
         "catalog_names": [c.name for c in pkg.catalogs],
         "unattended_install": pkg.unattended_install,
+        "unattended_uninstall": pkg.unattended_uninstall,
+        "minimum_os_version": pkg.minimum_os_version,
+        "installer_type": pkg.installer_type,
+        "restart_action": pkg.restart_action,
         "created_at": pkg.created_at,
         "updated_at": pkg.updated_at,
     }
@@ -74,6 +78,17 @@ def _to_read(pkg: PkgInfo) -> dict:
         "postuninstall_script": pkg.postuninstall_script,
         "installcheck_script": pkg.installcheck_script,
         "uninstallcheck_script": pkg.uninstallcheck_script,
+        "version_script": pkg.version_script,
+        "notes": pkg.notes,
+        "restart_action": pkg.restart_action,
+        "on_demand": pkg.on_demand,
+        "force_install_after_date": pkg.force_install_after_date,
+        "apple_item": pkg.apple_item,
+        "installable_condition": pkg.installable_condition,
+        "package_path": pkg.package_path,
+        "package_complete_url": pkg.package_complete_url,
+        "minimum_munki_version": pkg.minimum_munki_version,
+        "uninstaller_item_location": pkg.uninstaller_item_location,
         "catalog_names": [c.name for c in pkg.catalogs],
         "is_deleted": pkg.is_deleted,
         "created_at": pkg.created_at,
@@ -123,6 +138,19 @@ async def list_pkginfo(
         page_size=page_size,
         total_pages=(total + page_size - 1) // page_size,
     )
+
+
+@router.get("/categories", response_model=list[str])
+async def list_categories(
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        select(PkgInfo.category)
+        .where(PkgInfo.is_deleted.is_(False), PkgInfo.category.isnot(None))
+        .distinct()
+        .order_by(PkgInfo.category)
+    )
+    return [row[0] for row in result.all()]
 
 
 @router.get("/{pkg_id}", response_model=PkgInfoRead)

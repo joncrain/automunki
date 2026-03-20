@@ -1,26 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
-
-
-class AutoPkgRepoBase(BaseModel):
-    url: str
-    name: str
-    description: str | None = None
-    is_active: bool = True
-
-
-class AutoPkgRepoCreate(AutoPkgRepoBase):
-    pass
-
-
-class AutoPkgRepoRead(AutoPkgRepoBase):
-    id: UUID
-    last_synced_at: datetime | None = None
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
+from pydantic import BaseModel, field_validator
 
 
 class AutoPkgRecipeBase(BaseModel):
@@ -34,7 +15,7 @@ class AutoPkgRecipeBase(BaseModel):
 
 
 class AutoPkgRecipeCreate(AutoPkgRecipeBase):
-    repo_id: UUID | None = None
+    source_repo_full_name: str | None = None
     override_data: dict | None = None
     trust_info: dict | None = None
     input_variables: dict | None = None
@@ -46,6 +27,7 @@ class AutoPkgRecipeUpdate(BaseModel):
     identifier: str | None = None
     name: str | None = None
     parent_recipe: str | None = None
+    source_repo_full_name: str | None = None
     is_enabled: bool | None = None
     is_override: bool | None = None
     auto_promote: bool | None = None
@@ -57,12 +39,11 @@ class AutoPkgRecipeUpdate(BaseModel):
 
 class AutoPkgRecipeRead(AutoPkgRecipeBase):
     id: UUID
-    repo_id: UUID | None = None
+    source_repo_full_name: str | None = None
     override_data: dict | None = None
     trust_info: dict | None = None
     input_variables: dict | None = None
     trust_status: str = "unknown"
-    trust_diff: dict | None = None
     trust_verified_at: datetime | None = None
     trust_approved_by: str | None = None
     trust_approved_at: datetime | None = None
@@ -83,6 +64,7 @@ class RunResultCreate(BaseModel):
     recipe_name: str
     status: str
     imported_version: str | None = None
+    imported_display_name: str | None = None
     imported_pkg_path: str | None = None
     imported_pkginfo_path: str | None = None
     imported_catalogs: list[str] | None = None
@@ -99,6 +81,7 @@ class RunResultRead(BaseModel):
     recipe_name: str
     status: str
     imported_version: str | None = None
+    imported_display_name: str | None = None
     imported_pkg_path: str | None = None
     imported_pkginfo_path: str | None = None
     imported_catalogs: list[str] | None = None
@@ -165,6 +148,20 @@ class TrustApprovalRequest(BaseModel):
     comment: str | None = None
 
 
+class TrustCommitResolveRequest(BaseModel):
+    """Resolve a Git commit that introduced a trust file hash change."""
+
+    github_repo: str
+    github_path: str
+    new_sha256: str
+    old_sha256: str | None = None
+
+
+class TrustCommitResolveResponse(BaseModel):
+    commit_sha: str | None = None
+    commit_url: str | None = None
+
+
 # ── GitHub recipe cache schemas ──────────────────────────────────────────
 
 
@@ -179,9 +176,21 @@ class GitHubRecipeRepoRead(BaseModel):
     updated_at: str | None = None
     default_branch: str | None = None
     synced_at: datetime
+    is_custom: bool = False
     cached_recipes: list["GitHubRecipeRead"] = []
 
     model_config = {"from_attributes": True}
+
+
+class GitHubCustomRepoAdd(BaseModel):
+    """GitHub ``owner/repo`` to add to the local discover cache (any public repo)."""
+
+    full_name: str
+
+    @field_validator("full_name")
+    @classmethod
+    def strip_full_name(cls, v: str) -> str:
+        return v.strip()
 
 
 class GitHubRecipeRead(BaseModel):

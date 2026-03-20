@@ -46,10 +46,10 @@ jobs:
         with:
           pkg_url: https://github.com/autopkg/autopkg/releases/download/v${{ env.AUTOPKG_VERSION }}/autopkg-${{ env.AUTOPKG_VERSION }}.pkg
 
-      - name: Install Munki
-        uses: joncrain/macos-pkg-install@v1.0
-        with:
-          pkg_url: https://github.com/munki/munki/releases/download/v${{ env.MUNKI_VERSION }}/munkitools-${{ env.MUNKI_EXPLICIT_VERSION }}.pkg
+      # - name: Install Munki
+      #   uses: joncrain/macos-pkg-install@v1.0
+      #   with:
+      #     pkg_url: https://github.com/munki/munki/releases/download/v${{ env.MUNKI_VERSION }}/munkitools-${{ env.MUNKI_EXPLICIT_VERSION }}.pkg
 
       - name: Configure AutoPkg
         run: |

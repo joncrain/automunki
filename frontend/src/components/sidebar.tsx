@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   Package,
   Play,
-  RefreshCw,
   Settings,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -24,7 +23,6 @@ const navItems = [
   { href: '/autopkg/runs', label: 'AutoPkg Runs', icon: Play },
   { href: '/autopkg/recipes', label: 'Recipes', icon: BookOpen },
   { href: '/approvals', label: 'Approvals', icon: CheckCircle },
-  { href: '/sync', label: 'Sync', icon: RefreshCw },
   { href: '/audit', label: 'Audit Log', icon: ClipboardList },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]

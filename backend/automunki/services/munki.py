@@ -9,7 +9,6 @@ from sqlalchemy.orm import selectinload
 
 from automunki.models.munki import (
     Catalog,
-    Icon,
     Manifest,
     ManifestCatalog,
     ManifestInclusion,
@@ -137,6 +136,15 @@ def _pkginfo_to_dict(pkg: PkgInfo, *, for_catalog: bool = False) -> dict:
         ("postuninstall_script", "postuninstall_script"),
         ("installcheck_script", "installcheck_script"),
         ("uninstallcheck_script", "uninstallcheck_script"),
+        ("version_script", "version_script"),
+        ("notes", "notes"),
+        ("RestartAction", "restart_action"),
+        ("installable_condition", "installable_condition"),
+        ("package_path", "package_path"),
+        ("PackageCompleteURL", "package_complete_url"),
+        ("minimum_munki_version", "minimum_munki_version"),
+        ("uninstaller_item_location", "uninstaller_item_location"),
+        ("force_install_after_date", "force_install_after_date"),
     ]
 
     for plist_key, attr in simple_fields:
@@ -149,6 +157,8 @@ def _pkginfo_to_dict(pkg: PkgInfo, *, for_catalog: bool = False) -> dict:
         ("unattended_install", "unattended_install"),
         ("unattended_uninstall", "unattended_uninstall"),
         ("uninstallable", "uninstallable"),
+        ("OnDemand", "on_demand"),
+        ("apple_item", "apple_item"),
     ]
     for plist_key, attr in bool_fields:
         val = getattr(pkg, attr, None)
@@ -201,14 +211,9 @@ async def get_manifest_by_name(session: AsyncSession, manifest_name: str) -> Man
     return result.scalar_one_or_none()
 
 
-async def compile_icon_hashes_plist(session: AsyncSession) -> bytes:
-    """Generate the _icon_hashes.plist used by Munki to check icon freshness."""
-    result = await session.execute(select(Icon))
-    icons = result.scalars().all()
+async def compile_icon_hashes_plist(_session: AsyncSession) -> bytes:
+    """Generate the _icon_hashes.plist used by Munki to check icon freshness.
 
-    hashes: dict[str, str] = {}
-    for icon in icons:
-        if icon.name and icon.s3_path:
-            hashes[icon.name] = icon.s3_path
-
-    return plistlib.dumps(hashes)
+    Returns an empty mapping; icon URLs are served via ``MUNKI_REPO_ICON_BASE_URL`` redirects.
+    """
+    return plistlib.dumps({})

@@ -244,49 +244,95 @@ export default function ManifestDetailPage() {
           {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center justify-between text-base">
-            <div className="flex items-center gap-2">
-              Catalogs
-              <Badge variant="secondary" className="text-xs">
-                {catalogNames.length}
-              </Badge>
-            </div>
-            <AddCatalogButton onAdd={addCatalog} existingItems={catalogNames} />
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {catalogNames.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No catalogs assigned. A manifest needs at least one catalog.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {catalogNames.map((name) => (
-                <Badge
-                  key={name}
-                  variant="secondary"
-                  className="gap-1 pr-1 text-sm"
-                >
-                  {name}
-                  <button
-                    type="button"
-                    aria-label={`Remove catalog ${name}`}
-                    className="ml-1 rounded-full p-0.5 hover:bg-muted"
-                    onClick={() => removeCatalog(name)}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-base">
+              <div className="flex items-center gap-2">
+                Catalogs
+                <Badge variant="secondary" className="text-xs">
+                  {catalogNames.length}
+                </Badge>
+              </div>
+              <AddCatalogButton
+                onAdd={addCatalog}
+                existingItems={catalogNames}
+              />
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {catalogNames.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No catalogs assigned. A manifest needs at least one catalog.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {catalogNames.map((name) => (
+                  <Badge
+                    key={name}
+                    variant="secondary"
+                    className="gap-1 pr-1 text-sm"
+                  >
+                    {name}
+                    <button
+                      type="button"
+                      aria-label={`Remove catalog ${name}`}
+                      className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                      onClick={() => removeCatalog(name)}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-base">
+              <div className="flex items-center gap-2">
+                Included Manifests
+                <Badge variant="secondary" className="text-xs">
+                  {includedManifestNames.length}
+                </Badge>
+              </div>
+              <AddManifestButton
+                onAdd={addIncludedManifest}
+                existingItems={includedManifestNames}
+                currentManifestName={manifest.name}
+              />
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {includedManifestNames.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No included manifests. Click + to include another manifest.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {includedManifestNames.map((name) => (
+                  <Badge
+                    key={name}
+                    variant="secondary"
+                    className="gap-1 pr-1 text-sm"
+                  >
+                    {name}
+                    <button
+                      type="button"
+                      aria-label={`Remove included manifest ${name}`}
+                      className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                      onClick={() => removeIncludedManifest(name)}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
         {ITEM_SECTIONS.map((sec) => (
           <SortableSection
             key={sec.key}
@@ -301,51 +347,6 @@ export default function ManifestDetailPage() {
           />
         ))}
       </div>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center justify-between text-base">
-            <div className="flex items-center gap-2">
-              Included Manifests
-              <Badge variant="secondary" className="text-xs">
-                {includedManifestNames.length}
-              </Badge>
-            </div>
-            <AddManifestButton
-              onAdd={addIncludedManifest}
-              existingItems={includedManifestNames}
-              currentManifestName={manifest.name}
-            />
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {includedManifestNames.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No included manifests. Click + to include another manifest.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {includedManifestNames.map((name) => (
-                <Badge
-                  key={name}
-                  variant="secondary"
-                  className="gap-1 pr-1 text-sm"
-                >
-                  {name}
-                  <button
-                    type="button"
-                    aria-label={`Remove included manifest ${name}`}
-                    className="ml-1 rounded-full p-0.5 hover:bg-muted"
-                    onClick={() => removeIncludedManifest(name)}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }

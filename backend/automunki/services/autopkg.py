@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import structlog
 from httpx import AsyncClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from automunki.core.config import settings
@@ -99,6 +99,101 @@ async def discover_autopkg_repos() -> list[dict]:
             page += 1
 
     return repos
+
+
+def normalize_github_full_name(raw: str) -> str:
+    """Return ``owner/repo`` from user input (strips URL prefixes and ``.git``)."""
+    s = raw.strip()
+    for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
+        if s.lower().startswith(prefix):
+            s = s[len(prefix) :]
+            break
+    s = s.removesuffix(".git").strip().strip("/")
+    if s.count("/") != 1:
+        msg = "Expected GitHub repo as owner/repo or https://github.com/owner/repo"
+        raise ValueError(msg)
+    owner, repo = s.split("/", 1)
+    if not owner or not repo or ".." in owner or ".." in repo:
+        msg = "Invalid owner or repo name"
+        raise ValueError(msg)
+    return f"{owner}/{repo}"
+
+
+async def fetch_github_repo_metadata(full_name: str) -> dict | None:
+    """GET /repos/{owner}/{repo} — public repos work unauthenticated (rate limits apply)."""
+    async with AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"{GITHUB_API}/repos/{full_name}",
+            headers=_github_headers(),
+        )
+    if resp.status_code != 200:
+        logger.warning(
+            "github_repo_fetch_failed",
+            full_name=full_name,
+            status=resp.status_code,
+        )
+        return None
+    repo = resp.json()
+    return {
+        "name": repo["name"],
+        "full_name": repo["full_name"],
+        "url": repo.get("clone_url"),
+        "html_url": repo["html_url"],
+        "description": repo.get("description"),
+        "stars": repo.get("stargazers_count", 0),
+        "updated_at": repo.get("updated_at"),
+        "default_branch": repo.get("default_branch", "main"),
+    }
+
+
+async def add_custom_repo_to_cache(session: AsyncSession, full_name: str) -> GitHubRecipeRepo:
+    """Insert or return existing row. New rows are ``is_custom`` (kept when syncing autopkg org)."""
+    full_name = normalize_github_full_name(full_name)
+    data = await fetch_github_repo_metadata(full_name)
+    if not data:
+        msg = f"GitHub repo not found or not accessible: {full_name}"
+        raise ValueError(msg)
+
+    canonical = data["full_name"]
+    existing = (
+        await session.execute(select(GitHubRecipeRepo).where(GitHubRecipeRepo.full_name == canonical))
+    ).scalar_one_or_none()
+    if existing:
+        return existing
+
+    row = GitHubRecipeRepo(
+        full_name=canonical,
+        name=data["name"],
+        html_url=data["html_url"],
+        clone_url=data.get("url"),
+        description=data.get("description"),
+        stars=data.get("stars", 0),
+        updated_at=data.get("updated_at"),
+        default_branch=data.get("default_branch", "main"),
+        is_custom=True,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    logger.info("custom_github_repo_added", full_name=canonical)
+    return row
+
+
+async def remove_github_repo_from_cache(session: AsyncSession, full_name: str) -> bool:
+    """Delete a cached repo and its recipe rows. Returns False if not found."""
+    row = (
+        await session.execute(
+            select(GitHubRecipeRepo).where(
+                func.lower(GitHubRecipeRepo.full_name) == full_name.lower(),
+            )
+        )
+    ).scalar_one_or_none()
+    if not row:
+        return False
+    await session.delete(row)
+    await session.commit()
+    logger.info("github_repo_removed_from_cache", full_name=full_name)
+    return True
 
 
 async def discover_recipes_in_repo(repo_full_name: str, default_branch: str | None = None) -> list[dict]:
@@ -257,6 +352,7 @@ async def sync_repos_to_cache(session: AsyncSession) -> dict:
     for full_name, data in remote_by_name.items():
         if full_name in existing_by_name:
             repo = existing_by_name[full_name]
+            repo.is_custom = False
             repo.description = data.get("description")
             repo.stars = data.get("stars", 0)
             repo.html_url = data["html_url"]
@@ -274,13 +370,17 @@ async def sync_repos_to_cache(session: AsyncSession) -> dict:
                 stars=data.get("stars", 0),
                 updated_at=data.get("updated_at"),
                 default_branch=data.get("default_branch", "main"),
+                is_custom=False,
             )
             session.add(repo)
             added += 1
 
     stale = set(existing_by_name.keys()) - set(remote_by_name.keys())
     for full_name in stale:
-        await session.delete(existing_by_name[full_name])
+        repo = existing_by_name[full_name]
+        if repo.is_custom:
+            continue
+        await session.delete(repo)
         removed += 1
 
     await session.commit()

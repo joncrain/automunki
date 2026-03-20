@@ -35,6 +35,7 @@ import plistlib
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 import structlog
 import yaml
@@ -768,6 +769,144 @@ def _diff_trust_section(old_section: dict, new_section: dict) -> dict:
             }
 
     return changes
+
+
+# ── Resolve Git commit from trust hash diff ───────────────────────────────
+
+
+def _contents_url(repo: str, path: str) -> str:
+    encoded_path = quote(path, safe="/")
+    return f"{GITHUB_API}/repos/{repo}/contents/{encoded_path}"
+
+
+async def _fetch_file_bytes_at_ref(
+    client: AsyncClient,
+    repo: str,
+    path: str,
+    ref: str,
+    *,
+    raise_on_rate_limit: bool = True,
+) -> bytes | None:
+    """Fetch file at an arbitrary git ref (commit SHA, branch, or tag)."""
+    try:
+        resp = await client.get(
+            _contents_url(repo, path),
+            headers=_github_headers(),
+            params={"ref": ref},
+        )
+    except Exception as exc:
+        logger.debug("github_fetch_at_ref_error", repo=repo, path=path, ref=ref, error=str(exc))
+        return None
+
+    if resp.status_code == 403:
+        reset_at = resp.headers.get("x-ratelimit-reset")
+        remaining = resp.headers.get("x-ratelimit-remaining")
+        if remaining == "0" or "rate limit" in resp.text.lower():
+            if raise_on_rate_limit:
+                raise GitHubRateLimitError(reset_at=int(reset_at) if reset_at else None)
+            return None
+    if resp.status_code != 200:
+        return None
+    data = resp.json()
+    if isinstance(data, list):
+        return None
+    if data.get("encoding") == "base64" and data.get("content"):
+        return base64.b64decode(data["content"])
+    return None
+
+
+async def resolve_introducing_commit(
+    repo: str,
+    path: str,
+    new_sha256: str,
+    old_sha256: str | None = None,
+    *,
+    max_commits: int = 40,
+) -> str | None:
+    """
+    Find a commit SHA that explains a trust hash change.
+
+    Walks recent commits touching ``path`` (newest first). Prefer a commit
+    whose tree has file hash ``new_sha256`` and whose first parent's version
+    of the file hashes to ``old_sha256`` (when ``old_sha256`` is set).
+    Otherwise returns the newest commit where the file already matches
+    ``new_sha256`` (e.g. ``added`` entries or ambiguous history).
+
+    Returns None if no match within ``max_commits`` or on API failure.
+    """
+    if not new_sha256:
+        return None
+    if old_sha256 == "":
+        old_sha256 = None
+
+    per_page = min(max(1, max_commits), 100)
+
+    async with AsyncClient(timeout=45) as client:
+        list_resp = await client.get(
+            f"{GITHUB_API}/repos/{repo}/commits",
+            headers=_github_headers(),
+            params={"path": path, "per_page": per_page},
+        )
+        if list_resp.status_code == 403:
+            reset_at = list_resp.headers.get("x-ratelimit-reset")
+            remaining = list_resp.headers.get("x-ratelimit-remaining")
+            if remaining == "0" or "rate limit" in list_resp.text.lower():
+                raise GitHubRateLimitError(reset_at=int(reset_at) if reset_at else None)
+        if list_resp.status_code != 200:
+            logger.warning(
+                "github_list_commits_failed",
+                repo=repo,
+                path=path,
+                status=list_resp.status_code,
+            )
+            return None
+
+        commits = list_resp.json()
+        if not isinstance(commits, list):
+            return None
+        if not commits:
+            return None
+
+        hash_cache: dict[str, str | None] = {}
+
+        async def content_sha256_at(ref: str) -> str | None:
+            if ref in hash_cache:
+                return hash_cache[ref]
+            raw = await _fetch_file_bytes_at_ref(client, repo, path, ref)
+            if raw is None:
+                hash_cache[ref] = None
+                return None
+            digest = hashlib.sha256(raw).hexdigest()
+            hash_cache[ref] = digest
+            return digest
+
+        if old_sha256:
+            for c in commits:
+                cur_sha = c.get("sha")
+                if not cur_sha:
+                    continue
+                h_cur = await content_sha256_at(cur_sha)
+                if h_cur != new_sha256:
+                    continue
+                parents = c.get("parents") or []
+                if not parents:
+                    return cur_sha
+                parent_sha = parents[0].get("sha")
+                if not parent_sha:
+                    continue
+                h_prev = await content_sha256_at(parent_sha)
+                if h_prev == old_sha256:
+                    return cur_sha
+
+        for c in commits:
+            cur_sha = c.get("sha")
+            if not cur_sha:
+                continue
+            h_cur = await content_sha256_at(cur_sha)
+            if h_cur == new_sha256:
+                return cur_sha
+
+    return None
 
 
 # ── Public helpers for override creation ──────────────────────────────────

@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Search,
   Star,
+  Trash2,
   X,
 } from 'lucide-react'
 import { parseAsString, useQueryState } from 'nuqs'
@@ -33,6 +34,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   type AutoPkgRecipeRead,
   api,
@@ -49,6 +51,8 @@ export default function DiscoverRecipesPage() {
   const [selectedRepo, setSelectedRepo] = useState<CachedGitHubRepo | null>(
     null,
   )
+  const [manualRepoInput, setManualRepoInput] = useState('')
+  const [addRepoDialogOpen, setAddRepoDialogOpen] = useState(false)
   const queryClient = useQueryClient()
   const trimmed = search.trim()
   const isSearching = trimmed.length >= 2
@@ -100,6 +104,41 @@ export default function DiscoverRecipesPage() {
     onError: (err: Error) => toast.error(`Sync failed: ${err.message}`),
   })
 
+  const addManualRepoMutation = useMutation({
+    mutationFn: () =>
+      api.post<CachedGitHubRepo>('/autopkg/cache/repos', {
+        full_name: manualRepoInput.trim(),
+      }),
+    onSuccess: () => {
+      toast.success('Repository added to cache')
+      setManualRepoInput('')
+      setAddRepoDialogOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['discover-repos'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const removeCachedRepoMutation = useMutation({
+    mutationFn: (fullName: string) => {
+      const parts = fullName.split('/')
+      if (parts.length !== 2) {
+        throw new Error('Invalid repo full name')
+      }
+      const [owner, repoName] = parts
+      return api.delete<{ removed: string }>(
+        `/autopkg/cache/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}`,
+      )
+    },
+    onSuccess: (data) => {
+      toast.success(`Removed ${data.removed} from cache`)
+      queryClient.invalidateQueries({ queryKey: ['discover-repos'] })
+      setSelectedRepo((current) =>
+        current?.full_name === data.removed ? null : current,
+      )
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
   const addMutation = useMutation({
     mutationFn: (recipe: SearchedRecipe | DiscoveredRecipe) =>
       api.post<AutoPkgRecipeRead>('/autopkg/recipes/add-override', {
@@ -138,11 +177,15 @@ export default function DiscoverRecipesPage() {
     : allRepos
 
   const isSyncing = syncReposMutation.isPending || syncRecipesMutation.isPending
+  const isMutatingRepos =
+    isSyncing ||
+    addManualRepoMutation.isPending ||
+    removeCachedRepoMutation.isPending
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
       <div>
-        <h1 className="text-3xl font-bold">Discover Recipes</h1>
+        <h1 className="text-3xl font-bold">Discover Munki Recipes</h1>
         <p className="mt-1 text-muted-foreground">
           Browse cached AutoPkg recipe repos or search for specific recipes.
           Click a repo to see all its recipes.
@@ -191,7 +234,7 @@ export default function DiscoverRecipesPage() {
           <Button
             variant="outline"
             size="sm"
-            disabled={isSyncing}
+            disabled={isMutatingRepos}
             onClick={() => syncReposMutation.mutate()}
           >
             <RefreshCw
@@ -202,7 +245,7 @@ export default function DiscoverRecipesPage() {
           <Button
             variant="outline"
             size="sm"
-            disabled={isSyncing || allRepos.length === 0}
+            disabled={isMutatingRepos || allRepos.length === 0}
             onClick={() => syncRecipesMutation.mutate()}
           >
             <RefreshCw
@@ -210,8 +253,81 @@ export default function DiscoverRecipesPage() {
             />
             Sync All Recipes
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={isMutatingRepos}
+            onClick={() => setAddRepoDialogOpen(true)}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Add external repo
+          </Button>
         </div>
       </div>
+
+      <Dialog
+        open={addRepoDialogOpen}
+        onOpenChange={(open) => {
+          setAddRepoDialogOpen(open)
+          if (!open) setManualRepoInput('')
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add external repo</DialogTitle>
+            <DialogDescription>
+              Add any public GitHub repository to the discover cache so you can
+              browse and add overrides from outside the autopkg organization.
+              Custom entries are kept when you run &quot;Sync Repos&quot;—only
+              repos from the autopkg org list are pruned when they disappear
+              upstream.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <Label htmlFor="manual-repo">Repository</Label>
+            <Input
+              id="manual-repo"
+              placeholder="owner/repo or https://github.com/owner/repo"
+              value={manualRepoInput}
+              onChange={(e) => setManualRepoInput(e.target.value)}
+              className="font-mono text-sm"
+              autoComplete="off"
+              onKeyDown={(e) => {
+                if (
+                  e.key === 'Enter' &&
+                  manualRepoInput.trim() &&
+                  !addManualRepoMutation.isPending
+                ) {
+                  e.preventDefault()
+                  addManualRepoMutation.mutate()
+                }
+              }}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAddRepoDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                !manualRepoInput.trim() || addManualRepoMutation.isPending
+              }
+              onClick={() => addManualRepoMutation.mutate()}
+            >
+              {addManualRepoMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Add to cache
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {reposLoading ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -281,11 +397,31 @@ export default function DiscoverRecipesPage() {
                             {cachedCount}
                           </Badge>
                         )}
+                        {repo.is_custom && (
+                          <Badge variant="outline" className="text-xs">
+                            Custom
+                          </Badge>
+                        )}
                         {repo.stars > 0 && (
                           <Badge variant="outline" className="text-xs">
                             <Star className="mr-1 h-3 w-3" />
                             {repo.stars}
                           </Badge>
+                        )}
+                        {repo.is_custom && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0"
+                            aria-label={`Remove ${repo.full_name} from cache`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removeCachedRepoMutation.mutate(repo.full_name)
+                            }}
+                            disabled={removeCachedRepoMutation.isPending}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
                         )}
                         {!hasRecipeResults && (
                           <ChevronRight className="h-4 w-4 text-muted-foreground" />

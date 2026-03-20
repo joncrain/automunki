@@ -47,19 +47,6 @@ class ApprovalStatus(enum.StrEnum):
     auto_approved = "auto_approved"
 
 
-class AutoPkgRepo(UUIDMixin, Base):
-    __tablename__ = "autopkg_repo"
-
-    url: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str | None] = mapped_column(Text)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    recipes: Mapped[list["AutoPkgRecipe"]] = relationship(back_populates="repo", lazy="selectin")
-
-
 class GitHubRecipeRepo(UUIDMixin, Base):
     """Locally cached GitHub autopkg recipe repository metadata."""
 
@@ -74,6 +61,7 @@ class GitHubRecipeRepo(UUIDMixin, Base):
     updated_at: Mapped[str | None] = mapped_column(Text)
     default_branch: Mapped[str | None] = mapped_column(Text)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    is_custom: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     cached_recipes: Mapped[list["GitHubRecipe"]] = relationship(
         back_populates="repo", cascade="all, delete-orphan", lazy="selectin"
@@ -113,11 +101,7 @@ class AutoPkgRecipe(UUIDMixin, Base):
     identifier: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     parent_recipe: Mapped[str | None] = mapped_column(Text)
-    repo_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("autopkg_repo.id", ondelete="SET NULL"),
-        index=True,
-    )
+    source_repo_full_name: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     override_data: Mapped[dict | None] = mapped_column(JSONB)
     trust_info: Mapped[dict | None] = mapped_column(JSONB)
     input_variables: Mapped[dict | None] = mapped_column(JSONB)
@@ -129,7 +113,6 @@ class AutoPkgRecipe(UUIDMixin, Base):
     target_catalogs: Mapped[list | None] = mapped_column(JSONB)
 
     trust_status: Mapped[str] = mapped_column(Text, default="unknown", server_default="unknown")
-    trust_diff: Mapped[dict | None] = mapped_column(JSONB)
     trust_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trust_approved_by: Mapped[str | None] = mapped_column(Text)
     trust_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -142,7 +125,6 @@ class AutoPkgRecipe(UUIDMixin, Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    repo: Mapped["AutoPkgRepo | None"] = relationship(back_populates="recipes")
     trust_change_requests: Mapped[list["TrustChangeRequest"]] = relationship(
         back_populates="recipe", cascade="all, delete-orphan", lazy="selectin"
     )
@@ -155,7 +137,7 @@ class TrustChangeRequestStatus(enum.StrEnum):
 
 
 class TrustChangeRequest(UUIDMixin, Base):
-    __tablename__ = "trust_change_request"
+    __tablename__ = "autopkg_trust_change_request"
 
     recipe_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -225,6 +207,7 @@ class AutoPkgRunResult(UUIDMixin, Base):
     )
 
     imported_version: Mapped[str | None] = mapped_column(Text)
+    imported_display_name: Mapped[str | None] = mapped_column(Text)
     imported_pkg_path: Mapped[str | None] = mapped_column(Text)
     imported_pkginfo_path: Mapped[str | None] = mapped_column(Text)
     imported_catalogs: Mapped[list | None] = mapped_column(JSONB)
@@ -250,16 +233,13 @@ class AutoPkgRunResult(UUIDMixin, Base):
     run: Mapped["AutoPkgRun"] = relationship(back_populates="results")
 
 
-class AutoPkgMetadataCache(UUIDMixin, Base):
-    """Singleton row storing the cloud-autopkg-runner metadata cache JSON.
+class AutoPkgMetadataCacheEntry(UUIDMixin, Base):
+    """Per-recipe metadata cache (ETags, paths) for the cloud AutoPkg runner."""
 
-    The cache tracks download ETags/timestamps so the runner can skip
-    unchanged downloads across workflow runs.
-    """
+    __tablename__ = "autopkg_metadata_cache_entry"
 
-    __tablename__ = "autopkg_metadata_cache"
-
-    cache_data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    recipe_key: Mapped[str] = mapped_column(Text, unique=True, nullable=False, index=True)
+    entry: Mapped[dict] = mapped_column(JSONB, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

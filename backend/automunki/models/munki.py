@@ -34,15 +34,8 @@ class PromotionStrategy(enum.StrEnum):
     auto_immediate = "auto_immediate"
 
 
-class SyncStatus(enum.StrEnum):
-    pending = "pending"
-    running = "running"
-    completed = "completed"
-    failed = "failed"
-
-
 class PkgInfo(UUIDMixin, Base):
-    __tablename__ = "pkg_info"
+    __tablename__ = "munki_pkginfo"
 
     name: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     display_name: Mapped[str | None] = mapped_column(Text)
@@ -81,6 +74,18 @@ class PkgInfo(UUIDMixin, Base):
     postuninstall_script: Mapped[str | None] = mapped_column(Text)
     installcheck_script: Mapped[str | None] = mapped_column(Text)
     uninstallcheck_script: Mapped[str | None] = mapped_column(Text)
+    version_script: Mapped[str | None] = mapped_column(Text)
+
+    notes: Mapped[str | None] = mapped_column(Text)
+    restart_action: Mapped[str | None] = mapped_column(Text)
+    on_demand: Mapped[bool] = mapped_column(Boolean, default=False)
+    force_install_after_date: Mapped[str | None] = mapped_column(Text)
+    apple_item: Mapped[bool] = mapped_column(Boolean, default=False)
+    installable_condition: Mapped[str | None] = mapped_column(Text)
+    package_path: Mapped[str | None] = mapped_column(Text)
+    package_complete_url: Mapped[str | None] = mapped_column(Text)
+    minimum_munki_version: Mapped[str | None] = mapped_column(Text)
+    uninstaller_item_location: Mapped[str | None] = mapped_column(Text)
 
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
     raw_plist: Mapped[dict | None] = mapped_column(JSONB)
@@ -92,14 +97,14 @@ class PkgInfo(UUIDMixin, Base):
     )
 
     catalogs: Mapped[list["Catalog"]] = relationship(
-        secondary="pkg_info_catalog", back_populates="pkg_infos", lazy="selectin"
+        secondary="munki_pkginfo_catalog", back_populates="pkg_infos", lazy="selectin"
     )
 
-    __table_args__ = (UniqueConstraint("name", "version", name="uq_pkg_info_name_version"),)
+    __table_args__ = (UniqueConstraint("name", "version", name="uq_munki_pkginfo_name_version"),)
 
 
 class Catalog(UUIDMixin, Base):
-    __tablename__ = "catalog"
+    __tablename__ = "munki_catalog"
 
     name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     display_name: Mapped[str | None] = mapped_column(Text)
@@ -109,27 +114,27 @@ class Catalog(UUIDMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     pkg_infos: Mapped[list["PkgInfo"]] = relationship(
-        secondary="pkg_info_catalog", back_populates="catalogs", lazy="selectin"
+        secondary="munki_pkginfo_catalog", back_populates="catalogs", lazy="selectin"
     )
 
 
 class PkgInfoCatalog(Base):
-    __tablename__ = "pkg_info_catalog"
+    __tablename__ = "munki_pkginfo_catalog"
 
     pkg_info_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("pkg_info.id", ondelete="CASCADE"),
+        ForeignKey("munki_pkginfo.id", ondelete="CASCADE"),
         primary_key=True,
     )
     catalog_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("catalog.id", ondelete="CASCADE"),
+        ForeignKey("munki_catalog.id", ondelete="CASCADE"),
         primary_key=True,
     )
 
 
 class Manifest(UUIDMixin, Base):
-    __tablename__ = "manifest"
+    __tablename__ = "munki_manifest"
 
     name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     display_name: Mapped[str | None] = mapped_column(Text)
@@ -161,16 +166,16 @@ class Manifest(UUIDMixin, Base):
 
 
 class ManifestCatalog(Base):
-    __tablename__ = "manifest_catalog"
+    __tablename__ = "munki_manifest_catalog"
 
     manifest_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("manifest.id", ondelete="CASCADE"),
+        ForeignKey("munki_manifest.id", ondelete="CASCADE"),
         primary_key=True,
     )
     catalog_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("catalog.id", ondelete="CASCADE"),
+        ForeignKey("munki_catalog.id", ondelete="CASCADE"),
         primary_key=True,
     )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
@@ -180,11 +185,11 @@ class ManifestCatalog(Base):
 
 
 class ManifestItem(UUIDMixin, Base):
-    __tablename__ = "manifest_item"
+    __tablename__ = "munki_manifest_item"
 
     manifest_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("manifest.id", ondelete="CASCADE"),
+        ForeignKey("munki_manifest.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -196,16 +201,16 @@ class ManifestItem(UUIDMixin, Base):
 
 
 class ManifestInclusion(Base):
-    __tablename__ = "manifest_inclusion"
+    __tablename__ = "munki_manifest_inclusion"
 
     parent_manifest_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("manifest.id", ondelete="CASCADE"),
+        ForeignKey("munki_manifest.id", ondelete="CASCADE"),
         primary_key=True,
     )
     child_manifest_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("manifest.id", ondelete="CASCADE"),
+        ForeignKey("munki_manifest.id", ondelete="CASCADE"),
         primary_key=True,
     )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
@@ -215,17 +220,17 @@ class ManifestInclusion(Base):
 
 
 class PromotionRule(UUIDMixin, Base):
-    __tablename__ = "promotion_rule"
+    __tablename__ = "munki_promotion_rule"
 
     pkginfo_name: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     source_catalog_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("catalog.id", ondelete="CASCADE"),
+        ForeignKey("munki_catalog.id", ondelete="CASCADE"),
         nullable=False,
     )
     target_catalog_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("catalog.id", ondelete="CASCADE"),
+        ForeignKey("munki_catalog.id", ondelete="CASCADE"),
         nullable=False,
     )
     strategy: Mapped[PromotionStrategy] = mapped_column(
@@ -239,32 +244,3 @@ class PromotionRule(UUIDMixin, Base):
 
     source_catalog: Mapped["Catalog"] = relationship(foreign_keys=[source_catalog_id])
     target_catalog: Mapped["Catalog"] = relationship(foreign_keys=[target_catalog_id])
-
-
-class SyncJob(UUIDMixin, Base):
-    __tablename__ = "sync_job"
-
-    status: Mapped[SyncStatus] = mapped_column(
-        Enum(SyncStatus, name="sync_status_enum", native_enum=True),
-        nullable=False,
-        default=SyncStatus.pending,
-    )
-    triggered_by: Mapped[str | None] = mapped_column(Text)
-    trigger_type: Mapped[str | None] = mapped_column(Text)
-    github_run_id: Mapped[str | None] = mapped_column(Text)
-    files_synced: Mapped[int | None] = mapped_column(Integer)
-    error_message: Mapped[str | None] = mapped_column(Text)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class Icon(UUIDMixin, Base):
-    __tablename__ = "icon"
-
-    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    s3_path: Mapped[str | None] = mapped_column(Text)
-    content_type: Mapped[str | None] = mapped_column(Text)
-    file_size: Mapped[int | None] = mapped_column(Integer)
-    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
