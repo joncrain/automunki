@@ -23,6 +23,8 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { api, type ManifestRead } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { munkiAccents } from '@/lib/munki-accents'
+import { cn } from '@/lib/utils'
 
 export default function ManifestsPage() {
   const queryClient = useQueryClient()
@@ -76,7 +78,7 @@ export default function ManifestsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
-        Loading...
+        Loading…
       </div>
     )
   }
@@ -84,7 +86,14 @@ export default function ManifestsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Manifests</h1>
+        <h1
+          className={cn(
+            'text-3xl font-bold text-pretty',
+            munkiAccents.manifests.pageTitle,
+          )}
+        >
+          Manifests
+        </h1>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -174,11 +183,17 @@ export default function ManifestsPage() {
 
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {manifests?.map((manifest) => (
-          <Card key={manifest.id} className="border-l-4 border-l-primary/40">
+          <Card
+            key={manifest.id}
+            className={cn(munkiAccents.manifests.manifestGridCard)}
+          >
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <FileText className="h-5 w-5 text-primary" />
+                  <FileText
+                    className={cn('h-5 w-5', munkiAccents.manifests.icon)}
+                    aria-hidden
+                  />
                   <span>{manifest.name}</span>
                 </div>
                 <div className="flex items-center gap-2">

@@ -83,6 +83,26 @@ function trustStatusBadge(status: string) {
   }
 }
 
+function extractPkginfo(
+  inputVars: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  if (!inputVars || typeof inputVars !== 'object') return {}
+  const pkginfo = inputVars.pkginfo
+  if (!pkginfo || typeof pkginfo !== 'object') return {}
+  return pkginfo as Record<string, unknown>
+}
+
+/** Munki catalog names from ``Input.pkginfo.catalogs`` on the recipe. */
+function pkginfoCatalogsFromInput(
+  inputVars: Record<string, unknown> | null | undefined,
+): string[] {
+  const c = extractPkginfo(inputVars).catalogs
+  if (Array.isArray(c)) {
+    return c.filter((x): x is string => typeof x === 'string')
+  }
+  return []
+}
+
 function makeColumns(
   onToggleEnabled: (id: string, enabled: boolean) => void,
   onToggleAutoPromote: (id: string, auto: boolean) => void,
@@ -172,17 +192,23 @@ function makeColumns(
       ),
     },
     {
-      accessorKey: 'target_catalogs',
-      header: 'Target Catalogs',
-      cell: ({ row }) => (
-        <div className="flex gap-1">
-          {row.original.target_catalogs?.map((c) => (
-            <Badge key={c} variant="secondary">
-              {c}
-            </Badge>
-          )) ?? '—'}
-        </div>
-      ),
+      id: 'pkginfo_catalogs',
+      header: 'Catalogs',
+      cell: ({ row }) => {
+        const cats = pkginfoCatalogsFromInput(
+          row.original.input_variables as Record<string, unknown> | null,
+        )
+        if (cats.length === 0) return '—'
+        return (
+          <div className="flex flex-wrap gap-1">
+            {cats.map((c) => (
+              <Badge key={c} variant="secondary">
+                {c}
+              </Badge>
+            ))}
+          </div>
+        )
+      },
     },
     {
       accessorKey: 'last_run_status',
@@ -721,15 +747,6 @@ const PKGINFO_LIST_FIELDS = [
   { key: 'update_for', label: 'Update For' },
 ] as const
 
-function extractPkginfo(
-  inputVars: Record<string, unknown> | null | undefined,
-): Record<string, unknown> {
-  if (!inputVars || typeof inputVars !== 'object') return {}
-  const pkginfo = inputVars.pkginfo
-  if (!pkginfo || typeof pkginfo !== 'object') return {}
-  return pkginfo as Record<string, unknown>
-}
-
 function extractNonPkginfoInput(
   inputVars: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {
@@ -765,9 +782,6 @@ function RecipeEditDialog({
   const [isEnabled, setIsEnabled] = useState(recipe.is_enabled)
   const [isOverride, setIsOverride] = useState(recipe.is_override)
   const [autoPromote, setAutoPromote] = useState(recipe.auto_promote)
-  const [targetCatalogs, setTargetCatalogs] = useState(
-    (recipe.target_catalogs ?? []).join(', '),
-  )
 
   const [nonPkginfoEntries, setNonPkginfoEntries] = useState<KVEntry[]>(
     kvFromDict(extractNonPkginfoInput(inputVarsRaw)),
@@ -833,12 +847,6 @@ function RecipeEditDialog({
       is_enabled: isEnabled,
       is_override: isOverride,
       auto_promote: autoPromote,
-      target_catalogs: targetCatalogs
-        ? targetCatalogs
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : null,
       input_variables: Object.keys(mergedInput).length > 0 ? mergedInput : null,
     }
 
@@ -963,27 +971,33 @@ function RecipeEditDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="recipe-catalogs">Target Catalogs</Label>
+              <Label htmlFor="recipe-catalogs">Catalogs</Label>
+              <p className="text-xs text-muted-foreground">
+                Stored as{' '}
+                <span className="font-mono">Input.pkginfo.catalogs</span> (what
+                AutoPkg writes into pkginfo).
+              </p>
               <div className="flex flex-wrap gap-1 mb-2">
                 {catalogNames.map((cat) => {
-                  const selected = targetCatalogs
-                    .split(',')
-                    .map((s) => s.trim())
-                    .includes(cat)
+                  const values = Array.isArray(pkginfo.catalogs)
+                    ? (pkginfo.catalogs as string[]).filter(
+                        (x): x is string => typeof x === 'string',
+                      )
+                    : []
+                  const selected = values.includes(cat)
                   return (
                     <Badge
                       key={cat}
                       variant={selected ? 'default' : 'outline'}
                       className="cursor-pointer"
                       onClick={() => {
-                        const current = targetCatalogs
-                          .split(',')
-                          .map((s) => s.trim())
-                          .filter(Boolean)
                         const next = selected
-                          ? current.filter((c) => c !== cat)
-                          : [...current, cat]
-                        setTargetCatalogs(next.join(', '))
+                          ? values.filter((c) => c !== cat)
+                          : [...values, cat]
+                        updatePkgField(
+                          'catalogs',
+                          next.length > 0 ? next : undefined,
+                        )
                       }}
                     >
                       {cat}
@@ -993,8 +1007,18 @@ function RecipeEditDialog({
               </div>
               <Input
                 id="recipe-catalogs"
-                value={targetCatalogs}
-                onChange={(e) => setTargetCatalogs(e.target.value)}
+                value={
+                  Array.isArray(pkginfo.catalogs)
+                    ? (pkginfo.catalogs as string[]).join(', ')
+                    : ''
+                }
+                onChange={(e) => {
+                  const next = e.target.value
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                  updatePkgField('catalogs', next.length > 0 ? next : undefined)
+                }}
                 placeholder="testing, production"
               />
             </div>

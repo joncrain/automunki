@@ -110,7 +110,6 @@ class AutoPkgRecipe(UUIDMixin, Base):
     is_override: Mapped[bool] = mapped_column(Boolean, default=False)
 
     auto_promote: Mapped[bool] = mapped_column(Boolean, default=False)
-    target_catalogs: Mapped[list | None] = mapped_column(JSONB)
 
     trust_status: Mapped[str] = mapped_column(Text, default="unknown", server_default="unknown")
     trust_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -11,7 +11,6 @@ class AutoPkgRecipeBase(BaseModel):
     is_enabled: bool = True
     is_override: bool = False
     auto_promote: bool = False
-    target_catalogs: list[str] | None = None
 
 
 class AutoPkgRecipeCreate(AutoPkgRecipeBase):
@@ -31,7 +30,6 @@ class AutoPkgRecipeUpdate(BaseModel):
     is_enabled: bool | None = None
     is_override: bool | None = None
     auto_promote: bool | None = None
-    target_catalogs: list[str] | None = None
     override_data: dict | None = None
     trust_info: dict | None = None
     input_variables: dict | None = None

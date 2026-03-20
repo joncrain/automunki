@@ -6,7 +6,7 @@ import type {
   SortingState,
   VisibilityState,
 } from '@tanstack/react-table'
-import { Search, X } from 'lucide-react'
+import { Package, Search, X } from 'lucide-react'
 import Link from 'next/link'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
 import { useState } from 'react'
@@ -29,6 +29,8 @@ import {
   type PkgInfoSummary,
 } from '@/lib/api'
 import { formatDate } from '@/lib/format'
+import { munkiAccents } from '@/lib/munki-accents'
+import { cn } from '@/lib/utils'
 
 const columns: ColumnDef<PkgInfoSummary>[] = [
   {
@@ -228,7 +230,18 @@ export default function SoftwarePage() {
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Software Catalog</h1>
+        <div
+          className={cn(
+            'flex items-center gap-3',
+            munkiAccents.software.pageTitle,
+          )}
+        >
+          <Package
+            className={cn('h-8 w-8 shrink-0', munkiAccents.software.icon)}
+            aria-hidden
+          />
+          <h1 className="text-3xl font-bold text-pretty">Software Catalog</h1>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -303,7 +316,7 @@ export default function SoftwarePage() {
         )}
       </div>
 
-      <div className="flex-1 min-h-0">
+      <div className="min-h-0 flex-1">
         <DataTable
           columns={columns}
           data={data?.items ?? []}

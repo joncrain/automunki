@@ -211,7 +211,6 @@ export interface AutoPkgRecipeRead {
   is_enabled: boolean
   is_override: boolean
   auto_promote: boolean
-  target_catalogs: string[] | null
   override_data: unknown
   trust_info: unknown
   input_variables: unknown

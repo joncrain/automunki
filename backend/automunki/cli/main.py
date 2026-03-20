@@ -246,7 +246,6 @@ async def import_repo(repo_path: str):
                     override_data=_sanitize_plist_for_json(data.get("Input", {})),
                     trust_info=_sanitize_plist_for_json(data.get("ParentRecipeTrustInfo", {})),
                     input_variables=_sanitize_plist_for_json(data.get("Input", {})),
-                    target_catalogs=data.get("Input", {}).get("pkginfo", {}).get("catalogs"),
                 )
                 session.add(recipe)
                 logger.info("imported_override", identifier=identifier, name=name)

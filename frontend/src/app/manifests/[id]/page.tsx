@@ -52,6 +52,8 @@ import {
   type PaginatedResponse,
   type PkgInfoSummary,
 } from '@/lib/api'
+import { munkiAccents } from '@/lib/munki-accents'
+import { cn } from '@/lib/utils'
 
 const ITEM_SECTIONS = [
   {
@@ -235,7 +237,14 @@ export default function ManifestDetailPage() {
       </Breadcrumb>
 
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">{manifest.name}</h1>
+        <h1
+          className={cn(
+            'text-3xl font-bold text-pretty',
+            munkiAccents.manifests.pageTitle,
+          )}
+        >
+          {manifest.name}
+        </h1>
         <Button
           onClick={handleSave}
           disabled={!dirty || saveMutation.isPending}

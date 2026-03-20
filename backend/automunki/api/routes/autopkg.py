@@ -1024,7 +1024,6 @@ async def add_recipe_override(
         "is_override": True,
         "is_enabled": data.is_enabled,
         "auto_promote": data.auto_promote,
-        "target_catalogs": data.target_catalogs,
         "trust_status": "verified",
     }
 

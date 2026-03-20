@@ -136,7 +136,8 @@
   --gruvbox-blue: #83a598;
   --gruvbox-yellow: #fabd2f;
   --gruvbox-purple: #d3869b;
-  --gruvbox-aqua: #8ec07c;
+  /* Distinct from --gruvbox-green (#8ec07c): muted teal, not a second “bright green” */
+  --gruvbox-aqua: #689d6a;
   --gruvbox-orange: #fe8019;
 }
 

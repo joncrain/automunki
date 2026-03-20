@@ -23,6 +23,8 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { api, type CatalogRead, type PkgInfoSummary } from '@/lib/api'
 import { formatDate } from '@/lib/format'
+import { munkiAccents } from '@/lib/munki-accents'
+import { cn } from '@/lib/utils'
 
 export default function CatalogsPage() {
   const queryClient = useQueryClient()
@@ -127,7 +129,14 @@ export default function CatalogsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Catalogs</h1>
+        <h1
+          className={cn(
+            'text-3xl font-bold text-pretty',
+            munkiAccents.catalogs.pageTitle,
+          )}
+        >
+          Catalogs
+        </h1>
         <Dialog
           open={createOpen}
           onOpenChange={(v) => {
@@ -296,14 +305,14 @@ export default function CatalogsPage() {
         {catalogs?.map((catalog) => (
           <Card
             key={catalog.id}
-            className="border-l-4 border-l-gruvbox-green/40 cursor-pointer transition-colors hover:bg-accent/50"
+            className={cn(munkiAccents.catalogs.catalogGridCard)}
             onClick={() => setViewCatalog(catalog)}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <FolderOpen
-                  className="h-5 w-5 text-gruvbox-green"
-                  aria-hidden="true"
+                  className={cn('h-5 w-5', munkiAccents.catalogs.icon)}
+                  aria-hidden
                 />
                 {catalog.name}
               </CardTitle>
@@ -385,7 +394,7 @@ function CatalogItemsDialog({
       <DialogContent className="max-h-[80vh] sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FolderOpen className="h-5 w-5 text-gruvbox-green" />
+            <FolderOpen className={cn('h-5 w-5', munkiAccents.catalogs.icon)} />
             {catalog.name}
             {catalog.is_production && (
               <Badge variant="default" className="ml-2">

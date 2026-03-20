@@ -52,6 +52,8 @@ import {
   type ReceiptItem,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { munkiAccents } from '@/lib/munki-accents'
+import { cn } from '@/lib/utils'
 
 interface EditableFields {
   display_name: string
@@ -292,8 +294,8 @@ export default function SoftwareDetailPage() {
             iconName={pkg.icon_name}
             size="lg"
           />
-          <div>
-            <h1 className="text-3xl font-bold">
+          <div className={cn(munkiAccents.software.pageTitle)}>
+            <h1 className="text-3xl font-bold text-pretty">
               {pkg.display_name || pkg.name}
             </h1>
             <p className="text-muted-foreground">
