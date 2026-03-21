@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator
@@ -20,6 +21,18 @@ class AutoPkgRecipeCreate(AutoPkgRecipeBase):
     input_variables: dict | None = None
     github_repo: str | None = None
     recipe_path: str | None = None
+
+
+class AutoPkgRecipeImportOverrideRequest(BaseModel):
+    """Paste or upload an existing AutoPkg recipe override (plist XML, binary base64, or YAML/JSON)."""
+
+    content: str
+    name: str | None = None
+    source_repo_full_name: str | None = None
+    is_enabled: bool = True
+    auto_promote: bool = False
+    #: When true, resolve parent recipes on GitHub and populate ``trust_info`` (recommended).
+    refresh_trust: bool = True
 
 
 class AutoPkgRecipeUpdate(BaseModel):
@@ -55,6 +68,8 @@ class AutoPkgRecipeRead(AutoPkgRecipeBase):
 
 class TriggerRunRequest(BaseModel):
     recipe_names: list[str] | None = None
+    #: ``github`` = trigger GitHub Actions; ``local`` = register run for a local Mac only.
+    runner: Literal["github", "local"] | None = None
 
 
 class RunResultCreate(BaseModel):
@@ -102,6 +117,7 @@ class AutoPkgRunRead(BaseModel):
     status: str
     trigger_type: str
     triggered_by: str | None = None
+    runner_type: str = "github"
     github_run_id: str | None = None
     github_run_url: str | None = None
     recipe_filter: list[str] | None = None

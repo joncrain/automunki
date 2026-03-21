@@ -144,20 +144,11 @@ uv run alembic upgrade head
 uv run alembic downgrade -1
 ```
 
-## Client Agent Installation
+## Client reporting (Swift postflight)
 
-1. Copy `agent/automunki_agent.py` to `/usr/local/munki/` on managed Macs
-2. Create config at `/etc/automunki/agent.conf`:
-   ```json
-   {"api_url": "https://your-automunki-server.com"}
-   ```
-3. Install the launchd plist:
-   ```bash
-   sudo cp agent/com.automunki.agent.plist /Library/LaunchDaemons/
-   sudo launchctl load /Library/LaunchDaemons/com.automunki.agent.plist
-   ```
+Fleet check-ins use the Swift **`postflight`** in [`agent/`](../agent/README.md): from `agent/`, run `make build` to produce `build/postflight` (universal binary), install it next to `managedsoftwareupdate` per Munki’s [preflight/postflight](https://github.com/munki/munki/wiki/Preflight-And-Postflight-Scripts) docs.
 
-The `api_url` is the same single URL (port 3000) — the agent's `/api/v1/reports/checkin` calls are proxied to the backend automatically.
+The binary reads Munki’s **`SoftwareRepoURL`** and POSTs to **`{origin}/api/v1/reports/checkin`** (scheme + host + port only; repo path stripped). That matches a single-origin deployment where Next.js proxies `/api/*` to the backend—no separate `api_url` config or Python on the client.
 
 ## Cloud Deployment
 

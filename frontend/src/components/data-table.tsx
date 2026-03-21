@@ -5,6 +5,7 @@ import {
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
+  type OnChangeFn,
   type SortingState,
   useReactTable,
   type VisibilityState,
@@ -56,9 +57,68 @@ interface DataTableProps<TData, TValue> {
   sorting?: SortingState
   onSortingChange?: (sorting: SortingState) => void
   defaultColumnVisibility?: VisibilityState
+  columnVisibility?: VisibilityState
+  onColumnVisibilityChange?: OnChangeFn<VisibilityState>
+  hideColumnPicker?: boolean
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
+
+function columnDefId<TData, TValue>(col: ColumnDef<TData, TValue>): string {
+  if (col.id) return col.id
+  if ('accessorKey' in col && col.accessorKey != null) {
+    return String(col.accessorKey)
+  }
+  return ''
+}
+
+export function ColumnVisibilityMenu<TData, TValue>({
+  columns: columnDefs,
+  columnVisibility,
+  onColumnVisibilityChange,
+}: {
+  columns: ColumnDef<TData, TValue>[]
+  columnVisibility: VisibilityState
+  onColumnVisibilityChange: OnChangeFn<VisibilityState>
+}) {
+  const toggleable = columnDefs.filter((c) => c.enableHiding !== false)
+
+  if (toggleable.length === 0) return null
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Settings2 className="mr-2 size-4" aria-hidden="true" />
+          Columns
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {toggleable.map((col) => {
+          const id = columnDefId(col)
+          if (!id) return null
+          const label = typeof col.header === 'string' ? col.header : id
+          return (
+            <DropdownMenuCheckboxItem
+              key={id}
+              checked={columnVisibility[id] !== false}
+              onCheckedChange={(v) => {
+                onColumnVisibilityChange((prev) => ({
+                  ...prev,
+                  [id]: !!v,
+                }))
+              }}
+            >
+              {label}
+            </DropdownMenuCheckboxItem>
+          )
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 export function DataTable<TData, TValue>({
   columns,
@@ -73,11 +133,18 @@ export function DataTable<TData, TValue>({
   sorting: externalSorting,
   onSortingChange: externalOnSortingChange,
   defaultColumnVisibility,
+  columnVisibility: columnVisibilityProp,
+  onColumnVisibilityChange: onColumnVisibilityChangeProp,
+  hideColumnPicker = false,
 }: DataTableProps<TData, TValue>) {
   const [internalSorting, setInternalSorting] = useState<SortingState>([])
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
-    defaultColumnVisibility ?? {},
-  )
+  const [internalColumnVisibility, setInternalColumnVisibility] =
+    useState<VisibilityState>(() => defaultColumnVisibility ?? {})
+
+  const columnVisibility =
+    columnVisibilityProp !== undefined
+      ? columnVisibilityProp
+      : internalColumnVisibility
 
   const isManualSort = !!externalOnSortingChange
   const sorting = externalSorting ?? internalSorting
@@ -100,7 +167,13 @@ export function DataTable<TData, TValue>({
         setInternalSorting(next)
       }
     },
-    onColumnVisibilityChange: setColumnVisibility,
+    onColumnVisibilityChange: (updater) => {
+      if (onColumnVisibilityChangeProp) {
+        onColumnVisibilityChangeProp(updater)
+      } else {
+        setInternalColumnVisibility(updater)
+      }
+    },
   })
 
   const showFooter = onPageChange || total != null
@@ -110,36 +183,26 @@ export function DataTable<TData, TValue>({
     .filter((col) => col.getCanHide())
 
   return (
-    <div className="flex h-full flex-col">
-      {toggleableColumns.length > 0 && defaultColumnVisibility && (
-        <div className="flex justify-end pb-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Settings2 className="mr-2 size-4" aria-hidden="true" />
-                Columns
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {toggleableColumns.map((col) => (
-                <DropdownMenuCheckboxItem
-                  key={col.id}
-                  checked={col.getIsVisible()}
-                  onCheckedChange={(v) => col.toggleVisibility(!!v)}
-                >
-                  {typeof col.columnDef.header === 'string'
-                    ? col.columnDef.header
-                    : col.id}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
+    <div className="flex h-full min-w-0 flex-col">
+      {toggleableColumns.length > 0 &&
+        defaultColumnVisibility &&
+        !hideColumnPicker && (
+          <div className="flex justify-end pb-2">
+            <ColumnVisibilityMenu
+              columns={columns}
+              columnVisibility={columnVisibility}
+              onColumnVisibilityChange={(updater) => {
+                if (onColumnVisibilityChangeProp) {
+                  onColumnVisibilityChangeProp(updater)
+                } else {
+                  setInternalColumnVisibility(updater)
+                }
+              }}
+            />
+          </div>
+        )}
 
-      <div className="flex-1 overflow-auto rounded-md border">
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto rounded-md border">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -213,7 +276,7 @@ export function DataTable<TData, TValue>({
       </div>
 
       {showFooter && (
-        <div className="flex items-center justify-between border-t px-2 py-3">
+        <div className="flex items-center justify-between px-2 py-3">
           <div
             className="text-sm text-muted-foreground"
             style={{ fontVariantNumeric: 'tabular-nums' }}

@@ -16,5 +16,8 @@ AutoPkg/Reports/
 AutoPkg/Cache/
 .agents/
 .cursor/
+agent/build/
+agent/payload/
 .ruff_cache/
 .venv/
+metadata_cache_response.json

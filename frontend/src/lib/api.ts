@@ -36,6 +36,47 @@ export const api = {
   delete: <T>(path: string) => apiFetch<T>(path, { method: 'DELETE' }),
 }
 
+export interface IconUploadResult {
+  icon_name: string
+  filename: string
+}
+
+/** Upload a PNG to the UI icons directory (``frontend/public/icons`` by default). */
+export async function uploadSoftwareIcon(
+  file: File,
+  iconName: string,
+): Promise<IconUploadResult> {
+  const token =
+    typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('icon_name', iconName)
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const res = await fetch(`${API_BASE}/api/v1/icons/upload`, {
+    method: 'POST',
+    headers,
+    body: fd,
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({ detail: res.statusText }))
+    const d = errBody.detail
+    const msg =
+      typeof d === 'string'
+        ? d
+        : Array.isArray(d)
+          ? d
+              .map((x: { msg?: string }) => x?.msg)
+              .filter(Boolean)
+              .join('; ')
+          : res.statusText
+    throw new Error(msg || `API error: ${res.status}`)
+  }
+  return res.json()
+}
+
 export interface PaginatedResponse<T> {
   items: T[]
   total: number
@@ -166,6 +207,8 @@ export interface AutoPkgRunRead {
   status: string
   trigger_type: string
   triggered_by: string | null
+  /** github = GitHub Actions; local = run script on your Mac */
+  runner_type: string
   github_run_id: string | null
   github_run_url: string | null
   recipe_filter: string[] | null
@@ -306,4 +349,90 @@ export interface AuditLogRead {
 
 export interface UiSettingsRead {
   github_repo: string
+  /** Server default when the trigger dialog does not override */
+  autopkg_runner_mode: string
+}
+
+export interface ClientMachineSummary {
+  id: string
+  serial_number: string
+  hostname: string | null
+  os_version: string | null
+  machine_model: string | null
+  munki_version: string | null
+  manifest_name: string | null
+  last_checkin_at: string | null
+  disk_free_gb: number | null
+  install_report_count: number
+}
+
+export interface CheckinHistoryPoint {
+  date: string
+  count: number
+}
+
+/** GET /pkginfo/{id}/install-reports/summary */
+export interface PkgInfoInstallReportSummary {
+  item_name: string
+  total_reports: number
+  unique_machines: number
+  by_status: Record<string, number>
+  timeline: CheckinHistoryPoint[]
+}
+
+export interface ClientInstallReportRow {
+  id: string
+  item_name: string
+  item_version: string | null
+  status: string
+  error_message: string | null
+  install_date: string | null
+  created_at: string
+}
+
+/** Flat list row from GET /reports/installs (includes machine). */
+export interface ClientInstallReportListItem extends ClientInstallReportRow {
+  machine_id: string
+  hostname: string | null
+  serial_number: string | null
+}
+
+export interface ClientMachineDetail {
+  id: string
+  serial_number: string
+  hostname: string | null
+  /** Marketing name from Munki MachineInfo when agent sends it (e.g. MacBook Pro). */
+  product_name?: string | null
+  /** Apple FMIP-style PNG (same CDN as MunkiReport). */
+  device_image_url?: string | null
+  platform_uuid?: string | null
+  os_version: string | null
+  os_build: string | null
+  machine_model: string | null
+  cpu_type: string | null
+  cpu_arch?: string | null
+  physical_cpus?: number | null
+  logical_cpus?: number | null
+  ram_mb: number | null
+  disk_size_gb: number | null
+  disk_free_gb: number | null
+  munki_version: string | null
+  manifest_name: string | null
+  client_identifier: string | null
+  hardware_info: unknown
+  installed_software: unknown
+  last_checkin_at: string | null
+  first_checkin_at: string | null
+  /** All-time count of POST /reports/checkin for this machine. */
+  checkin_total?: number
+  /** Daily buckets for the last ~90 days (including zeros). */
+  checkin_history?: CheckinHistoryPoint[]
+  install_reports: ClientInstallReportRow[]
+}
+
+export interface FleetComplianceOverview {
+  total_machines: number
+  checked_in_last_7_days: number
+  stale_over_30_days: number
+  compliance_percentage: number
 }

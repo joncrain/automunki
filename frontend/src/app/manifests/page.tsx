@@ -1,11 +1,12 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileText, Pencil, Plus, Trash2 } from 'lucide-react'
+import { FileText, Plus, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { SoftwareNameAvatarCircles } from '@/components/software-avatar-circles'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -185,9 +186,17 @@ export default function ManifestsPage() {
         {manifests?.map((manifest) => (
           <Card
             key={manifest.id}
-            className={cn(munkiAccents.manifests.manifestGridCard)}
+            className={cn(
+              'relative h-full overflow-hidden',
+              munkiAccents.manifests.manifestGridCard,
+            )}
           >
-            <CardHeader>
+            <Link
+              href={`/manifests/${manifest.id}`}
+              className="absolute inset-0 z-[1] cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-label={`Edit manifest ${manifest.name}`}
+            />
+            <CardHeader className="relative z-[2] pointer-events-none">
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <FileText
@@ -203,20 +212,10 @@ export default function ManifestsPage() {
                     </Badge>
                   ))}
                   <Button
+                    type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
-                    aria-label={`Edit ${manifest.name}`}
-                    asChild
-                  >
-                    <Link href={`/manifests/${manifest.id}`}>
-                      <Pencil className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    className="pointer-events-auto h-8 w-8 text-muted-foreground hover:text-destructive"
                     aria-label={`Delete ${manifest.name}`}
                     onClick={() => setDeleteManifest(manifest)}
                   >
@@ -225,76 +224,69 @@ export default function ManifestsPage() {
                 </div>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {manifest.managed_installs.length > 0 && (
-                <div>
-                  <h4 className="mb-2 text-sm font-medium text-muted-foreground">
-                    Managed Installs
-                  </h4>
-                  <div className="flex flex-wrap gap-1">
-                    {manifest.managed_installs.map((item) => (
-                      <Badge key={item} variant="outline">
-                        {item}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {manifest.managed_uninstalls.length > 0 && (
-                <div>
-                  <h4 className="mb-2 text-sm font-medium text-muted-foreground">
-                    Managed Uninstalls
-                  </h4>
-                  <div className="flex flex-wrap gap-1">
-                    {manifest.managed_uninstalls.map((item) => (
-                      <Badge key={item} variant="destructive">
-                        {item}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {manifest.optional_installs.length > 0 && (
-                <div>
-                  <h4 className="mb-2 text-sm font-medium text-muted-foreground">
-                    Optional Installs
-                  </h4>
-                  <div className="flex flex-wrap gap-1">
-                    {manifest.optional_installs.map((item) => (
-                      <Badge key={item} variant="outline">
-                        {item}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {manifest.included_manifest_names.length > 0 && (
-                <>
-                  <Separator />
+            <CardContent className="relative z-[2] flex min-h-0 flex-1 flex-col pointer-events-none">
+              <div className="flex min-h-0 flex-1 flex-col gap-4">
+                {manifest.managed_installs.length > 0 && (
                   <div>
                     <h4 className="mb-2 text-sm font-medium text-muted-foreground">
-                      Included Manifests
+                      Managed Installs
                     </h4>
-                    <div className="flex flex-wrap gap-1">
-                      {manifest.included_manifest_names.map((n) => (
-                        <Badge key={n} variant="secondary">
-                          {n}
-                        </Badge>
-                      ))}
-                    </div>
+                    <SoftwareNameAvatarCircles
+                      names={manifest.managed_installs}
+                      interactive={false}
+                    />
                   </div>
-                </>
-              )}
+                )}
 
-              <p
-                suppressHydrationWarning
-                className="text-xs text-muted-foreground"
-              >
-                Updated {formatDateTime(manifest.updated_at)}
-              </p>
+                {manifest.managed_uninstalls.length > 0 && (
+                  <div>
+                    <h4 className="mb-2 text-sm font-medium text-muted-foreground">
+                      Managed Uninstalls
+                    </h4>
+                    <SoftwareNameAvatarCircles
+                      names={manifest.managed_uninstalls}
+                      interactive={false}
+                    />
+                  </div>
+                )}
+
+                {manifest.optional_installs.length > 0 && (
+                  <div>
+                    <h4 className="mb-2 text-sm font-medium text-muted-foreground">
+                      Optional Installs
+                    </h4>
+                    <SoftwareNameAvatarCircles
+                      names={manifest.optional_installs}
+                      interactive={false}
+                    />
+                  </div>
+                )}
+
+                {manifest.included_manifest_names.length > 0 && (
+                  <>
+                    <Separator />
+                    <div>
+                      <h4 className="mb-2 text-sm font-medium text-muted-foreground">
+                        Included Manifests
+                      </h4>
+                      <div className="flex flex-wrap gap-1">
+                        {manifest.included_manifest_names.map((n) => (
+                          <Badge key={n} variant="secondary">
+                            {n}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <p
+                  suppressHydrationWarning
+                  className="mt-auto pt-2 text-xs text-muted-foreground"
+                >
+                  Updated {formatDateTime(manifest.updated_at)}
+                </p>
+              </div>
             </CardContent>
           </Card>
         ))}

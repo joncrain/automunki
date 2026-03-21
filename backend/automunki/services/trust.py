@@ -263,6 +263,10 @@ def _parse_identifier(identifier: str) -> tuple[str, str, str] | None:
           -> ("wardsparadox", "munki", "Ghostty")
         com.github.swy.download.BraveUniversal
           -> ("swy", "download", "BraveUniversal")
+        io.github.hjuutilainen.munki.Blender
+          -> ("hjuutilainen", "munki", "Blender")
+
+    Some authors use ``io.github.`` instead of ``com.github.`` (reverse-DNS style).
     """
     m = re.match(r"com\.github\.(?:[^.]+)\.([^.]+)\.([^.]+)\.(.+)$", identifier)
     if m:
@@ -271,6 +275,14 @@ def _parse_identifier(identifier: str) -> tuple[str, str, str] | None:
     m2 = re.match(r"com\.github\.([^.]+)\.([^.]+)\.(.+)$", identifier)
     if m2:
         return m2.group(1), m2.group(2), m2.group(3)
+
+    m_io = re.match(r"io\.github\.(?:[^.]+)\.([^.]+)\.([^.]+)\.(.+)$", identifier)
+    if m_io:
+        return m_io.group(1), m_io.group(2), m_io.group(3)
+
+    m_io2 = re.match(r"io\.github\.([^.]+)\.([^.]+)\.(.+)$", identifier)
+    if m_io2:
+        return m_io2.group(1), m_io2.group(2), m_io2.group(3)
 
     return None
 
@@ -281,6 +293,8 @@ def _candidate_repos(identifier: str) -> list[str]:
     Deduplicates while preserving order.
     """
     m4 = re.match(r"com\.github\.([^.]+)\.([^.]+)\.", identifier)
+    if not m4:
+        m4 = re.match(r"io\.github\.([^.]+)\.([^.]+)\.", identifier)
     if not m4:
         return ["autopkg/recipes"]
     org_or_user = m4.group(1)
@@ -702,8 +716,8 @@ def _infer_github_location(identifier: str, local_path: str) -> tuple[str | None
         -> ("autopkg/recipes", "Mozilla/Firefox.munki.recipe")
       ~/Library/AutoPkg/RecipeRepos/com.github.autopkg.swy-recipes/BraveUniversal/BraveUniversal.download.recipe
         -> ("autopkg/swy-recipes", "BraveUniversal/BraveUniversal.download.recipe")
-      ~/Library/AutoPkg/RecipeRepos/com.github.autopkg.wardsparadox-recipes/Ghostty/Ghostty.munki.recipe.yaml
-        -> ("autopkg/wardsparadox-recipes", "Ghostty/Ghostty.munki.recipe.yaml")
+      ~/work/.../autopkg_src/repos/com.github.autopkg.recipes/Mozilla/Firefox.munki.recipe
+        -> ("autopkg/recipes", "Mozilla/Firefox.munki.recipe")
 
     The directory name pattern is: com.github.<org>.<repo-name>
     which maps to GitHub: <org>/<repo-name>
@@ -712,28 +726,80 @@ def _infer_github_location(identifier: str, local_path: str) -> tuple[str | None
         return None, None
 
     path_str = local_path.replace("~", "").strip("/")
+
+    def _split_com_github_repo_dir(after: str) -> tuple[str, str] | None:
+        parts = after.split("/", 1)
+        if len(parts) != 2:
+            return None
+        repo_dir, file_path = parts[0], parts[1]
+        m = re.match(r"com\.github\.([^.]+)\.(.+)", repo_dir)
+        if not m:
+            return None
+        return f"{m.group(1)}/{m.group(2)}", file_path
+
     marker = "RecipeRepos/"
     idx = path_str.find(marker)
-    if idx < 0:
-        return None, None
+    if idx >= 0:
+        after = path_str[idx + len(marker) :]
+        got = _split_com_github_repo_dir(after)
+        if got:
+            return got[0], got[1]
 
-    after = path_str[idx + len(marker) :]
-    parts = after.split("/", 1)
-    if len(parts) != 2:
-        return None, None
+    # Corporate / mirrored checkouts: .../repos/com.github.autopkg.recipes/Mozilla/...
+    m = re.search(r"repos/(com\.github\.[^/]+)/(.+)", path_str)
+    if m:
+        got = _split_com_github_repo_dir(f"{m.group(1)}/{m.group(2)}")
+        if got:
+            return got[0], got[1]
 
-    repo_dir = parts[0]
-    file_path = parts[1]
+    return None, None
 
-    m = re.match(r"com\.github\.([^.]+)\.(.+)", repo_dir)
-    if not m:
-        return None, None
 
-    org = m.group(1)
-    repo_name = m.group(2)
-    github_repo = f"{org}/{repo_name}"
+def trust_info_from_plist_parent_recipe_trust(plist_trust: dict | None) -> dict | None:
+    """
+    Convert plist ``ParentRecipeTrustInfo`` (from an imported override) into DB
+    ``trust_info`` shape: ``sha256_hash`` plus ``github_repo``/``github_path`` when
+    paths can be mapped (standard ``RecipeRepos`` or ``repos/com.github.*`` layouts).
+    """
+    if not plist_trust or not isinstance(plist_trust, dict):
+        return None
+    out: dict = {"parent_recipes": {}, "non_core_processors": {}}
 
-    return github_repo, file_path
+    for ident, entry in (plist_trust.get("parent_recipes") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        sha = entry.get("sha256_hash")
+        if not sha:
+            continue
+        row: dict = {"sha256_hash": sha}
+        path = entry.get("path", "")
+        repo, gpath = _infer_github_location(ident, path)
+        if repo and gpath:
+            row["github_repo"] = repo
+            row["github_path"] = gpath
+        elif path:
+            row["path"] = path
+        out["parent_recipes"][ident] = row
+
+    for name, entry in (plist_trust.get("non_core_processors") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        sha = entry.get("sha256_hash")
+        if not sha:
+            continue
+        row = {"sha256_hash": sha}
+        path = entry.get("path", "")
+        repo, gpath = _infer_github_location(name, path)
+        if repo and gpath:
+            row["github_repo"] = repo
+            row["github_path"] = gpath
+        elif path:
+            row["path"] = path
+        out["non_core_processors"][name] = row
+
+    if not out["parent_recipes"] and not out["non_core_processors"]:
+        return None
+    return out
 
 
 def _diff_trust_section(old_section: dict, new_section: dict) -> dict:
@@ -995,6 +1061,40 @@ def _repo_from_identifier(identifier: str) -> str | None:
     if len(parts) >= 5 and parts[:3] == ["com", "github", "autopkg"]:
         return f"autopkg/{parts[3]}-recipes"
     return None
+
+
+def merge_db_trust_into_plist_for_runner(plist: dict, trust_info: dict | None) -> None:
+    """
+    Copy ``ParentRecipeTrustInfo`` from canonical DB ``trust_info`` into a runner plist.
+
+    ``override_data`` often contains only the immediate parent's hashes (what was in
+    the override plist when saved). The DB ``trust_info`` has the **full** parent
+    chain and non-core processors from :func:`compute_trust_info` (mirrors AutoPkg's
+    walk). AutoPkg local trust verification requires every ancestor to appear in
+    ``ParentRecipeTrustInfo``; merging avoids "Failed local trust verification"
+    when the plist alone is incomplete.
+    """
+    if not trust_info:
+        return
+    merged: dict[str, dict[str, dict[str, str]]] = {
+        "parent_recipes": {},
+        "non_core_processors": {},
+    }
+    for section in ("parent_recipes", "non_core_processors"):
+        for k, v in (trust_info.get(section) or {}).items():
+            if isinstance(v, dict) and v.get("sha256_hash"):
+                merged[section][k] = {
+                    "git_hash": "",
+                    "sha256_hash": v["sha256_hash"],
+                }
+    if not merged["parent_recipes"] and not merged["non_core_processors"]:
+        return
+    parent = plist.setdefault("ParentRecipeTrustInfo", {})
+    parent.setdefault("parent_recipes", {})
+    parent.setdefault("non_core_processors", {})
+    for section in ("parent_recipes", "non_core_processors"):
+        for k, v in merged[section].items():
+            parent[section][k] = v
 
 
 def infer_repos_from_trust_info(trust_info: dict | None) -> list[str]:

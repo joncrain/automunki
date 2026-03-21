@@ -10,6 +10,7 @@ Expected environment variables:
 import json
 import os
 import plistlib
+import re
 import sys
 import urllib.request
 from datetime import date, datetime
@@ -47,12 +48,98 @@ def imported_display_title(item, pkgsinfo_dir, recipe_name):
     return recipe_name
 
 
+def _json_headers():
+    h = {"Content-Type": "application/json"}
+    token = os.environ.get("AUTOMUNKI_API_TOKEN", "")
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+    return h
+
+
+def _report_stem(report_path: str) -> str:
+    base = os.path.basename(report_path)
+    if base.lower().endswith(".plist"):
+        return base[:-6]
+    return base
+
+
+def _identifier_from_report_plist(report: dict) -> str | None:
+    """Best-effort recipe Identifier from report body (runner / AutoPkg variants)."""
+    for key in ("Identifier", "identifier", "recipe_identifier"):
+        v = report.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    rec = report.get("recipe")
+    if isinstance(rec, dict):
+        v = rec.get("Identifier") or rec.get("identifier")
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _find_identifier_deep(obj: object, depth: int = 0) -> str | None:
+    """Walk report plist; AutoPkg often nests Identifier under summary/input dicts."""
+    if depth > 14:
+        return None
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in ("Identifier", "identifier") and isinstance(v, str):
+                s = v.strip()
+                if s.startswith("local.munki.") or s.startswith("com.github."):
+                    return s
+                if s.startswith("com.") and s.count(".") >= 3:
+                    return s
+            found = _find_identifier_deep(v, depth + 1)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_identifier_deep(v, depth + 1)
+            if found:
+                return found
+    return None
+
+
+def _recipe_file_from_cloud_runner_report_name(report_path: str) -> str | None:
+    """``report_YYMMDD_HHMM_Recipe.munki.recipe.plist`` → ``Recipe.munki.recipe``."""
+    base = os.path.basename(report_path)
+    m = re.match(r"^report_\d+_\d+_(.+)\.plist$", base, re.IGNORECASE)
+    return m.group(1) if m else None
+
+
+def recipe_identifier_and_name(report_path: str, report: dict) -> tuple[str, str]:
+    """
+    (recipe_identifier, recipe_name) for API / DB matching.
+
+    Report files are often named like ``local.munki.Blender.plist`` (full identifier).
+    The old logic always prepended ``local.munki.``, producing a bogus identifier and
+    breaking ``last_run_*`` updates on the recipe row.
+    """
+    stem = _report_stem(report_path)
+    ident = _identifier_from_report_plist(report) or _find_identifier_deep(report)
+    if ident:
+        if ident.startswith("local.munki."):
+            name = ident[len("local.munki.") :]
+        else:
+            name = stem
+        return ident, name
+    cr_recipe = _recipe_file_from_cloud_runner_report_name(report_path)
+    if cr_recipe and cr_recipe.endswith(".munki.recipe"):
+        product = cr_recipe[: -len(".munki.recipe")]
+        return f"local.munki.{product}", product
+    if stem.startswith("local.munki."):
+        return stem, stem[len("local.munki.") :]
+    if stem.startswith("com."):
+        return stem, stem.split(".")[-1]
+    return f"local.munki.{stem}", stem
+
+
 def post_json(url, payload):
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers=_json_headers(),
         method="POST",
     )
     try:
@@ -81,14 +168,15 @@ def main():
     munki_summary = summary.get("munki_importer_summary_result", {})
     imported_items = munki_summary.get("data_rows", [])
 
-    recipe_name = os.path.basename(report_path).replace(".plist", "")
-    identifier = f"local.munki.{recipe_name}"
+    identifier, recipe_name = recipe_identifier_and_name(report_path, report)
 
     if imported_items:
         for item in imported_items:
             catalogs = item.get("catalogs", "")
             if isinstance(catalogs, str):
-                catalogs = [c.strip() for c in catalogs.split(",") if c.strip()]
+                catalogs = [
+                    c.strip() for c in re.split(r"[,/|]+", catalogs) if c.strip()
+                ]
 
             result_payload = {
                 "recipe_identifier": identifier,

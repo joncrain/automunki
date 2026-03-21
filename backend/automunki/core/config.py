@@ -1,5 +1,7 @@
 from pathlib import Path
+from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,7 +49,21 @@ class Settings(BaseSettings):
     munki_repo_pkg_base_url: str = ""
     munki_repo_icon_base_url: str = ""
 
+    #: Directory for UI software icons (PNG). Empty = auto-detect ``<repo>/frontend/public/icons``.
+    ui_icons_directory: str = ""
+
     api_public_url: str = ""
+
+    #: Default AutoPkg execution target when the UI does not send ``runner``:
+    #: ``github`` = dispatch GitHub Actions; ``local`` = create run only (execute on a Mac).
+    autopkg_runner_mode: Literal["github", "local"] = "github"
+
+    @field_validator("autopkg_runner_mode", mode="before")
+    @classmethod
+    def _normalize_autopkg_runner_mode(cls, v: object) -> str:
+        if v in ("github", "local"):
+            return str(v)
+        return "github"
 
     slack_webhook_url: str = ""
 

@@ -8,6 +8,8 @@ import {
   FileText,
   FolderOpen,
   LayoutDashboard,
+  ListChecks,
+  MonitorSmartphone,
   Package,
   Play,
   Settings,
@@ -51,10 +53,38 @@ const navGroups = [
     ],
   },
   {
-    label: 'Operations',
-    items: [{ href: '/audit', label: 'Audit Log', icon: ClipboardList }],
+    label: 'Reporting',
+    items: [
+      { href: '/reporting', label: 'Devices', icon: MonitorSmartphone },
+      { href: '/reporting/installs', label: 'Installs', icon: ListChecks },
+    ],
+  },
+  {
+    label: 'Admin',
+    items: [
+      { href: '/audit', label: 'Audit Log', icon: ClipboardList },
+      { href: '/settings', label: 'Settings', icon: Settings },
+    ],
   },
 ]
+
+function navItemIsActive(
+  pathname: string,
+  item: { href: string; label: string },
+) {
+  if (item.href === '/reporting' && item.label === 'Devices') {
+    return (
+      pathname === '/reporting' || pathname.startsWith('/reporting/devices/')
+    )
+  }
+  if (item.href === '/reporting/installs') {
+    return pathname.startsWith('/reporting/installs')
+  }
+  return (
+    pathname === item.href ||
+    (item.href !== '/' && pathname.startsWith(item.href))
+  )
+}
 
 export function AppSidebar() {
   const pathname = usePathname()
@@ -88,9 +118,7 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => {
-                  const isActive =
-                    pathname === item.href ||
-                    (item.href !== '/' && pathname.startsWith(item.href))
+                  const isActive = navItemIsActive(pathname, item)
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={isActive}>
@@ -114,14 +142,6 @@ export function AppSidebar() {
             <div className="flex items-center">
               <ThemeToggle />
             </div>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={pathname === '/settings'}>
-              <Link href="/settings">
-                <Settings className="size-4" />
-                <span>Settings</span>
-              </Link>
-            </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

@@ -43,9 +43,11 @@ export default function RootLayout({
                 <SidebarTrigger />
                 <span className="font-semibold">AutoMunki</span>
               </header>
-              <main className="flex-1 overflow-auto">
+              <main className="min-w-0 flex-1 overflow-auto">
                 <Suspense>
-                  <div className="container mx-auto p-6">{children}</div>
+                  <div className="container mx-auto min-w-0 max-w-full p-6">
+                    {children}
+                  </div>
                 </Suspense>
               </main>
             </SidebarInset>

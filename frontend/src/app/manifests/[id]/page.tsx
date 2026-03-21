@@ -17,10 +17,12 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { GripVertical, Plus, Save, X } from 'lucide-react'
+import { FileText, GripVertical, Plus, Save, X } from 'lucide-react'
+import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import {
   Breadcrumb,
@@ -31,7 +33,6 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Command,
   CommandEmpty,
@@ -60,31 +61,53 @@ const ITEM_SECTIONS = [
     key: 'managed_installs',
     label: 'Managed Installs',
     variant: 'outline' as const,
+    accent:
+      'border-l-gruvbox-blue/70 bg-gruvbox-blue/[0.07] dark:bg-gruvbox-blue/[0.12]',
+    rowAccent:
+      'border-gruvbox-blue/30 bg-gruvbox-blue/[0.04] dark:bg-gruvbox-blue/[0.08]',
   },
   {
     key: 'managed_uninstalls',
     label: 'Managed Uninstalls',
     variant: 'destructive' as const,
+    accent:
+      'border-l-destructive/80 bg-destructive/[0.08] dark:bg-destructive/[0.12]',
+    rowAccent:
+      'border-destructive/35 bg-destructive/[0.06] dark:bg-destructive/[0.1]',
   },
   {
     key: 'managed_updates',
     label: 'Managed Updates',
     variant: 'secondary' as const,
+    accent:
+      'border-l-gruvbox-aqua/70 bg-gruvbox-aqua/[0.07] dark:bg-gruvbox-aqua/[0.1]',
+    rowAccent:
+      'border-gruvbox-aqua/30 bg-gruvbox-aqua/[0.04] dark:bg-gruvbox-aqua/[0.08]',
   },
   {
     key: 'optional_installs',
     label: 'Optional Installs',
     variant: 'outline' as const,
+    accent: 'border-l-muted-foreground/50 bg-muted/40 dark:bg-muted/25',
+    rowAccent: 'border-muted-foreground/25 bg-muted/30 dark:bg-muted/20',
   },
   {
     key: 'featured_items',
     label: 'Featured Items',
     variant: 'default' as const,
+    accent:
+      'border-l-gruvbox-yellow/60 bg-gruvbox-yellow/[0.08] dark:bg-gruvbox-yellow/[0.12]',
+    rowAccent:
+      'border-gruvbox-yellow/30 bg-gruvbox-yellow/[0.05] dark:bg-gruvbox-yellow/[0.08]',
   },
   {
     key: 'default_installs',
     label: 'Default Installs',
     variant: 'secondary' as const,
+    accent:
+      'border-l-gruvbox-purple/60 bg-gruvbox-purple/[0.07] dark:bg-gruvbox-purple/[0.1]',
+    rowAccent:
+      'border-gruvbox-purple/30 bg-gruvbox-purple/[0.04] dark:bg-gruvbox-purple/[0.08]',
   },
 ] as const
 
@@ -101,6 +124,11 @@ function manifestToSections(m: ManifestRead): SectionsState {
     default_installs: [...m.default_installs],
   }
 }
+
+const commandPopoverContentClass =
+  'flex max-h-[min(70vh,440px)] w-[min(100vw-2rem,380px)] flex-col overflow-hidden p-0'
+
+const commandRootClass = 'flex min-h-0 flex-1 flex-col overflow-hidden'
 
 export default function ManifestDetailPage() {
   const params = useParams()
@@ -223,7 +251,7 @@ export default function ManifestDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-8">
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -236,7 +264,7 @@ export default function ManifestDetailPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <h1
           className={cn(
             'text-3xl font-bold text-pretty',
@@ -245,108 +273,39 @@ export default function ManifestDetailPage() {
         >
           {manifest.name}
         </h1>
-        <Button
-          onClick={handleSave}
-          disabled={!dirty || saveMutation.isPending}
-        >
-          <Save className="mr-1 h-4 w-4" />
-          {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-        </Button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button
+            onClick={handleSave}
+            disabled={!dirty || saveMutation.isPending}
+          >
+            <Save data-icon="inline-start" />
+            {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between text-base">
-              <div className="flex items-center gap-2">
-                Catalogs
-                <Badge variant="secondary" className="text-xs">
-                  {catalogNames.length}
-                </Badge>
-              </div>
-              <AddCatalogButton
-                onAdd={addCatalog}
-                existingItems={catalogNames}
-              />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {catalogNames.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">
-                No catalogs assigned. A manifest needs at least one catalog.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {catalogNames.map((name) => (
-                  <Badge
-                    key={name}
-                    variant="secondary"
-                    className="gap-1 pr-1 text-sm"
-                  >
-                    {name}
-                    <button
-                      type="button"
-                      aria-label={`Remove catalog ${name}`}
-                      className="ml-1 rounded-full p-0.5 hover:bg-muted"
-                      onClick={() => removeCatalog(name)}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between text-base">
-              <div className="flex items-center gap-2">
-                Included Manifests
-                <Badge variant="secondary" className="text-xs">
-                  {includedManifestNames.length}
-                </Badge>
-              </div>
-              <AddManifestButton
-                onAdd={addIncludedManifest}
-                existingItems={includedManifestNames}
-                currentManifestName={manifest.name}
-              />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {includedManifestNames.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">
-                No included manifests. Click + to include another manifest.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {includedManifestNames.map((name) => (
-                  <Badge
-                    key={name}
-                    variant="secondary"
-                    className="gap-1 pr-1 text-sm"
-                  >
-                    {name}
-                    <button
-                      type="button"
-                      aria-label={`Remove included manifest ${name}`}
-                      className="ml-1 rounded-full p-0.5 hover:bg-muted"
-                      onClick={() => removeIncludedManifest(name)}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      <ManifestCatalogRow
+        catalogNames={catalogNames}
+        onAdd={addCatalog}
+        onRemove={removeCatalog}
+        disabled={saveMutation.isPending}
+      />
+
+      <IncludedManifestsPanel
+        currentName={manifest.name}
+        includedNames={includedManifestNames}
+        onAdd={addIncludedManifest}
+        onRemove={removeIncludedManifest}
+      />
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {ITEM_SECTIONS.map((sec) => (
           <SortableSection
             key={sec.key}
             label={sec.label}
             badgeVariant={sec.variant}
+            accent={sec.accent}
+            rowAccent={sec.rowAccent}
             items={sections?.[sec.key] ?? []}
             onAdd={(name) => addItem(sec.key, name)}
             onRemove={(name) => removeItem(sec.key, name)}
@@ -360,9 +319,234 @@ export default function ManifestDetailPage() {
   )
 }
 
+function ManifestCatalogRow({
+  catalogNames,
+  onAdd,
+  onRemove,
+  disabled,
+}: {
+  catalogNames: string[]
+  onAdd: (name: string) => void
+  onRemove: (name: string) => void
+  disabled?: boolean
+}) {
+  const [popoverOpen, setPopoverOpen] = useState(false)
+
+  const { data: allCatalogs } = useQuery({
+    queryKey: ['catalogs'],
+    queryFn: () => api.get<CatalogRead[]>('/catalogs'),
+    enabled: popoverOpen,
+  })
+
+  const available = (allCatalogs ?? []).filter(
+    (c) => !catalogNames.includes(c.name),
+  )
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/25 bg-muted/20 px-3 py-2">
+      <span
+        className={cn('mr-1 text-sm font-medium', munkiAccents.catalogs.icon)}
+      >
+        Catalogs
+      </span>
+      {catalogNames.length === 0 ? (
+        <span className="text-sm text-muted-foreground">
+          None — add at least one catalog.
+        </span>
+      ) : (
+        catalogNames.map((c) => (
+          <Badge
+            key={c}
+            variant="secondary"
+            className="gap-1 border border-gruvbox-green/20 pr-1 text-sm"
+          >
+            {c}
+            <button
+              type="button"
+              aria-label={`Remove catalog ${c}`}
+              className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+              onClick={() => onRemove(c)}
+              disabled={disabled}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </Badge>
+        ))
+      )}
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            aria-label="Add catalog"
+            disabled={disabled}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className={commandPopoverContentClass} align="start">
+          <Command className={commandRootClass}>
+            <CommandInput placeholder="Search catalogs..." />
+            <CommandList className="max-h-[min(50vh,320px)]">
+              <CommandEmpty>No catalogs available.</CommandEmpty>
+              <CommandGroup>
+                {available.map((cat) => (
+                  <CommandItem
+                    key={cat.id}
+                    value={cat.name}
+                    onSelect={() => {
+                      onAdd(cat.name)
+                      setPopoverOpen(false)
+                    }}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate">{cat.name}</span>
+                      {cat.display_name && (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {cat.display_name}
+                        </span>
+                      )}
+                    </div>
+                    <Badge
+                      variant="secondary"
+                      className="ml-auto shrink-0 text-xs"
+                    >
+                      {cat.item_count}
+                    </Badge>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  )
+}
+
+function IncludedManifestsPanel({
+  currentName,
+  includedNames,
+  onAdd,
+  onRemove,
+}: {
+  currentName: string
+  includedNames: string[]
+  onAdd: (name: string) => void
+  onRemove: (name: string) => void
+}) {
+  const { data: allManifests } = useQuery({
+    queryKey: ['manifests'],
+    queryFn: () => api.get<ManifestRead[]>('/manifests'),
+  })
+
+  const idByName = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const man of allManifests ?? []) {
+      m.set(man.name, man.id)
+    }
+    return m
+  }, [allManifests])
+
+  return (
+    <div className="rounded-xl border bg-muted/10 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+            Included manifests
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Nested manifests are merged into this one (order matters in Munki).
+          </p>
+        </div>
+        <AddManifestButton
+          onAdd={onAdd}
+          existingItems={includedNames}
+          currentManifestName={currentName}
+        />
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3">
+        <div
+          className={cn(
+            'flex items-center gap-3 rounded-lg border bg-card px-4 py-3 shadow-sm',
+            'border-l-4 border-l-gruvbox-purple/70',
+          )}
+        >
+          <FileText
+            className={cn('size-5 shrink-0', munkiAccents.manifests.icon)}
+            aria-hidden
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">{currentName}</p>
+            <p className="text-xs text-muted-foreground">This manifest</p>
+          </div>
+          <Badge variant="outline" className="shrink-0 text-xs">
+            root
+          </Badge>
+        </div>
+
+        {includedNames.length > 0 && (
+          <div className="ml-2 flex flex-col gap-2 border-l-2 border-muted-foreground/25 pl-4">
+            {includedNames.map((name, idx) => {
+              const childId = idByName.get(name)
+              return (
+                <div
+                  key={name}
+                  className="flex items-center gap-2 rounded-md border bg-card/90 px-3 py-2 shadow-sm"
+                >
+                  <FileText
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1">
+                    {childId ? (
+                      <Link
+                        href={`/manifests/${childId}`}
+                        className="font-medium text-primary underline-offset-4 hover:underline"
+                      >
+                        {name}
+                      </Link>
+                    ) : (
+                      <span className="font-medium">{name}</span>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Included #{idx + 1}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+                    aria-label={`Remove included manifest ${name}`}
+                    onClick={() => onRemove(name)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {includedNames.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No included manifests. Use + to nest another manifest under{' '}
+            <span className="font-medium text-foreground">{currentName}</span>.
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function SortableSection({
   label,
   badgeVariant,
+  accent,
+  rowAccent,
   items,
   onAdd,
   onRemove,
@@ -370,6 +554,8 @@ function SortableSection({
 }: {
   label: string
   badgeVariant: 'outline' | 'destructive' | 'secondary' | 'default'
+  accent: string
+  rowAccent: string
   items: string[]
   onAdd: (name: string) => void
   onRemove: (name: string) => void
@@ -393,22 +579,26 @@ function SortableSection({
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center justify-between text-base">
-          <div className="flex items-center gap-2">
-            {label}
-            <Badge variant="secondary" className="text-xs">
-              {items.length}
-            </Badge>
-          </div>
-          <AddSoftwareButton onAdd={onAdd} existingItems={items} />
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+    <div
+      className={cn(
+        'flex flex-col gap-3 rounded-xl border bg-card py-4 shadow-sm',
+        'border-l-4',
+        accent,
+      )}
+    >
+      <div className="flex items-center justify-between gap-2 px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-semibold">{label}</span>
+          <Badge variant="secondary" className="shrink-0 text-xs">
+            {items.length}
+          </Badge>
+        </div>
+        <AddSoftwareButton onAdd={onAdd} existingItems={items} />
+      </div>
+      <div className="px-4">
         {items.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            No items. Click + to add software.
+          <p className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
+            No items. Use + to add software.
           </p>
         ) : (
           <DndContext
@@ -420,12 +610,13 @@ function SortableSection({
               items={items}
               strategy={verticalListSortingStrategy}
             >
-              <div className="space-y-1">
+              <div className="flex flex-col gap-1.5">
                 {items.map((item) => (
                   <SortableItem
                     key={item}
                     id={item}
                     badgeVariant={badgeVariant}
+                    rowAccent={rowAccent}
                     onRemove={() => onRemove(item)}
                   />
                 ))}
@@ -433,18 +624,20 @@ function SortableSection({
             </SortableContext>
           </DndContext>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
 function SortableItem({
   id,
   badgeVariant,
+  rowAccent,
   onRemove,
 }: {
   id: string
   badgeVariant: 'outline' | 'destructive' | 'secondary' | 'default'
+  rowAccent: string
   onRemove: () => void
 }) {
   const {
@@ -468,7 +661,10 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 rounded-md border bg-card px-3 py-2"
+      className={cn(
+        'flex items-center gap-2 rounded-md border px-2 py-1.5',
+        rowAccent,
+      )}
     >
       <button
         type="button"
@@ -479,13 +675,17 @@ function SortableItem({
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <Badge variant={badgeVariant} className="flex-1">
+      <SoftwareIcon name={id} size="sm" className="shrink-0" />
+      <Badge
+        variant={badgeVariant}
+        className="min-w-0 flex-1 justify-start truncate font-normal"
+      >
         {id}
       </Badge>
       <button
         type="button"
         aria-label={`Remove ${id}`}
-        className="text-muted-foreground hover:text-destructive"
+        className="shrink-0 text-muted-foreground hover:text-destructive"
         onClick={onRemove}
       >
         <X className="h-4 w-4" />
@@ -508,14 +708,22 @@ function AddSoftwareButton({
     queryKey: ['pkginfo-search', search],
     queryFn: () =>
       api.get<PaginatedResponse<PkgInfoSummary>>(
-        `/pkginfo?page_size=20${search ? `&search=${encodeURIComponent(search)}` : ''}`,
+        `/pkginfo?page_size=40${search ? `&search=${encodeURIComponent(search)}` : ''}`,
       ),
     enabled: open,
   })
 
-  const uniqueNames = Array.from(
-    new Set((data?.items ?? []).map((i) => i.name)),
-  ).filter((n) => !existingItems.includes(n))
+  const itemsByName = useMemo(() => {
+    const m = new Map<string, PkgInfoSummary>()
+    for (const item of data?.items ?? []) {
+      if (!m.has(item.name)) m.set(item.name, item)
+    }
+    return m
+  }, [data?.items])
+
+  const uniqueNames = [...itemsByName.keys()].filter(
+    (n) => !existingItems.includes(n),
+  )
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -524,91 +732,56 @@ function AddSoftwareButton({
           <Plus className="h-4 w-4" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[300px] p-0" align="end">
-        <Command shouldFilter={false}>
+      <PopoverContent className={commandPopoverContentClass} align="end">
+        <Command shouldFilter={false} className={commandRootClass}>
           <CommandInput
             placeholder="Search software..."
             value={search}
             onValueChange={setSearch}
           />
-          <CommandList>
+          <CommandList className="max-h-[min(50vh,320px)]">
             <CommandEmpty>No results.</CommandEmpty>
             <CommandGroup>
-              {uniqueNames.map((name) => (
-                <CommandItem
-                  key={name}
-                  value={name}
-                  onSelect={() => {
-                    onAdd(name)
-                    setOpen(false)
-                    setSearch('')
-                  }}
-                >
-                  {name}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-function AddCatalogButton({
-  onAdd,
-  existingItems,
-}: {
-  onAdd: (name: string) => void
-  existingItems: string[]
-}) {
-  const [open, setOpen] = useState(false)
-
-  const { data: catalogs } = useQuery({
-    queryKey: ['catalogs'],
-    queryFn: () => api.get<CatalogRead[]>('/catalogs'),
-    enabled: open,
-  })
-
-  const available = (catalogs ?? []).filter(
-    (c) => !existingItems.includes(c.name),
-  )
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" aria-label="Add catalog">
-          <Plus className="h-4 w-4" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[250px] p-0" align="end">
-        <Command>
-          <CommandInput placeholder="Search catalogs..." />
-          <CommandList>
-            <CommandEmpty>No catalogs available.</CommandEmpty>
-            <CommandGroup>
-              {available.map((cat) => (
-                <CommandItem
-                  key={cat.id}
-                  value={cat.name}
-                  onSelect={() => {
-                    onAdd(cat.name)
-                    setOpen(false)
-                  }}
-                >
-                  <div className="flex flex-col">
-                    <span>{cat.name}</span>
-                    {cat.display_name && (
-                      <span className="text-xs text-muted-foreground">
-                        {cat.display_name}
-                      </span>
-                    )}
-                  </div>
-                  <Badge variant="secondary" className="ml-auto text-xs">
-                    {cat.item_count}
-                  </Badge>
-                </CommandItem>
-              ))}
+              {uniqueNames.map((name) => {
+                const pkg = itemsByName.get(name)
+                const title = pkg?.display_name?.trim() || name
+                const developer = pkg?.developer?.trim()
+                return (
+                  <CommandItem
+                    key={name}
+                    value={[name, pkg?.display_name, developer]
+                      .filter(Boolean)
+                      .join(' ')}
+                    onSelect={() => {
+                      onAdd(name)
+                      setOpen(false)
+                      setSearch('')
+                    }}
+                    className="gap-2"
+                  >
+                    <SoftwareIcon
+                      name={name}
+                      displayName={pkg?.display_name}
+                      size="sm"
+                      className="shrink-0"
+                    />
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate font-medium">{title}</span>
+                      {developer ? (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {developer}
+                        </span>
+                      ) : (
+                        title !== name && (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {name}
+                          </span>
+                        )
+                      )}
+                    </div>
+                  </CommandItem>
+                )
+              })}
             </CommandGroup>
           </CommandList>
         </Command>
@@ -642,13 +815,14 @@ function AddManifestButton({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" aria-label="Add included manifest">
-          <Plus className="h-4 w-4" />
+          <Plus className="mr-1 h-4 w-4" />
+          Include manifest
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[300px] p-0" align="end">
-        <Command>
+      <PopoverContent className={commandPopoverContentClass} align="end">
+        <Command className={commandRootClass}>
           <CommandInput placeholder="Search manifests..." />
-          <CommandList>
+          <CommandList className="max-h-[min(50vh,320px)]">
             <CommandEmpty>No manifests available.</CommandEmpty>
             <CommandGroup>
               {available.map((m) => (
@@ -660,7 +834,14 @@ function AddManifestButton({
                     setOpen(false)
                   }}
                 >
-                  {m.name}
+                  <FileText
+                    className={cn(
+                      'size-4 shrink-0',
+                      munkiAccents.manifests.icon,
+                    )}
+                    aria-hidden
+                  />
+                  <span className="truncate">{m.name}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

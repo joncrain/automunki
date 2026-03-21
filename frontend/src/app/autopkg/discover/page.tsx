@@ -42,6 +42,8 @@ import {
   type DiscoveredRecipe,
   type SearchedRecipe,
 } from '@/lib/api'
+import { munkiAccents } from '@/lib/munki-accents'
+import { cn } from '@/lib/utils'
 
 export default function DiscoverRecipesPage() {
   const [search, setSearch] = useQueryState(
@@ -185,7 +187,14 @@ export default function DiscoverRecipesPage() {
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
       <div>
-        <h1 className="text-3xl font-bold">Discover Munki Recipes</h1>
+        <h1
+          className={cn(
+            'text-3xl font-bold text-pretty',
+            munkiAccents.autopkg.pageTitle,
+          )}
+        >
+          Discover Munki Recipes
+        </h1>
         <p className="mt-1 text-muted-foreground">
           Browse cached AutoPkg recipe repos or search for specific recipes.
           Click a repo to see all its recipes.

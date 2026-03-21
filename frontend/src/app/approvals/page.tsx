@@ -21,10 +21,12 @@ import {
   type TrustCommitResolveResponse,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { munkiAccents } from '@/lib/munki-accents'
 import {
   githubBlobUrlForTrustEntry,
   trustRepoPathForTrustEntry,
 } from '@/lib/trust-github'
+import { cn } from '@/lib/utils'
 
 function TrustCommitLink({
   repo,
@@ -312,7 +314,14 @@ export default function ApprovalsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Approval Queue</h1>
+      <h1
+        className={cn(
+          'text-3xl font-bold text-pretty',
+          munkiAccents.approvals.pageTitle,
+        )}
+      >
+        Approval Queue
+      </h1>
 
       {hasNothing ? (
         <Card>

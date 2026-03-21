@@ -22,6 +22,26 @@ export function formatDateTime(value: string | Date): string {
   return dateTimeFormatter.format(d)
 }
 
+/** Past-only relative label (e.g. "3 days ago"). */
+export function formatRelativeTimeAgo(iso: string | Date): string {
+  const then = typeof iso === 'string' ? new Date(iso).getTime() : iso.getTime()
+  if (Number.isNaN(then)) return '—'
+  const now = Date.now()
+  const diffSec = Math.max(0, Math.floor((now - then) / 1000))
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  if (diffSec < 45) return rtf.format(-diffSec, 'second')
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return rtf.format(-diffMin, 'minute')
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 48) return rtf.format(-diffHr, 'hour')
+  const diffDay = Math.floor(diffHr / 24)
+  if (diffDay < 60) return rtf.format(-diffDay, 'day')
+  const diffMonth = Math.floor(diffDay / 30)
+  if (diffMonth < 24) return rtf.format(-diffMonth, 'month')
+  const diffYear = Math.floor(diffDay / 365)
+  return rtf.format(-diffYear, 'year')
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`

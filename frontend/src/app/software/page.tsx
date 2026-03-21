@@ -10,7 +10,7 @@ import { Package, Search, X } from 'lucide-react'
 import Link from 'next/link'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
 import { useState } from 'react'
-import { DataTable } from '@/components/data-table'
+import { ColumnVisibilityMenu, DataTable } from '@/components/data-table'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -184,6 +184,9 @@ export default function SoftwarePage() {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'display_name', desc: false },
   ])
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
+    DEFAULT_COLUMN_VISIBILITY,
+  )
 
   const sortBy =
     sorting[0]?.id === 'display_name' ? 'name' : (sorting[0]?.id ?? 'name')
@@ -244,76 +247,86 @@ export default function SoftwarePage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search software..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value || null)
-              setPage(1)
-            }}
-            className="pl-9"
-          />
-        </div>
+      <div className="flex w-full flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <div className="relative max-w-sm flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search software..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value || null)
+                setPage(1)
+              }}
+              className="pl-9"
+            />
+          </div>
 
-        <Select
-          value={category || '_all'}
-          onValueChange={(v) => {
-            setCategory(v === '_all' ? null : v)
-            setPage(1)
-          }}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All Categories</SelectItem>
-            {(categories ?? []).map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={catalog || '_all'}
-          onValueChange={(v) => {
-            setCatalog(v === '_all' ? null : v)
-            setPage(1)
-          }}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Catalog" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All Catalogs</SelectItem>
-            {catalogs?.map((c) => (
-              <SelectItem key={c.id} value={c.name}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {hasFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Clear filters"
-            onClick={() => {
-              setSearch(null)
-              setCategory(null)
-              setCatalog(null)
+          <Select
+            value={category || '_all'}
+            onValueChange={(v) => {
+              setCategory(v === '_all' ? null : v)
               setPage(1)
             }}
           >
-            <X className="mr-1 h-4 w-4" />
-            Clear
-          </Button>
-        )}
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All Categories</SelectItem>
+              {(categories ?? []).map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={catalog || '_all'}
+            onValueChange={(v) => {
+              setCatalog(v === '_all' ? null : v)
+              setPage(1)
+            }}
+          >
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Catalog" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All Catalogs</SelectItem>
+              {catalogs?.map((c) => (
+                <SelectItem key={c.id} value={c.name}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Clear filters"
+              onClick={() => {
+                setSearch(null)
+                setCategory(null)
+                setCatalog(null)
+                setPage(1)
+              }}
+            >
+              <X className="mr-1 h-4 w-4" />
+              Clear
+            </Button>
+          )}
+        </div>
+
+        <div className="ml-auto shrink-0">
+          <ColumnVisibilityMenu
+            columns={columns}
+            columnVisibility={columnVisibility}
+            onColumnVisibilityChange={setColumnVisibility}
+          />
+        </div>
       </div>
 
       <div className="min-h-0 flex-1">
@@ -336,6 +349,9 @@ export default function SoftwarePage() {
             setPage(1)
           }}
           defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
+          columnVisibility={columnVisibility}
+          onColumnVisibilityChange={setColumnVisibility}
+          hideColumnPicker
         />
       </div>
     </div>

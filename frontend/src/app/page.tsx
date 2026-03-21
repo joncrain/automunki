@@ -12,6 +12,10 @@ import {
 import Link from 'next/link'
 import type { ComponentType, ReactNode } from 'react'
 import { AutoPkgRunsChart } from '@/components/dashboard/autopkg-runs-chart'
+import {
+  SoftwareAvatarCircles,
+  useSoftwarePreviewPackages,
+} from '@/components/software-avatar-circles'
 import { Badge } from '@/components/ui/badge'
 import {
   Card,
@@ -94,9 +98,8 @@ export default function DashboardPage() {
       api.get<PaginatedResponse<AutoPkgRunRead>>('/autopkg/runs?page_size=100'),
   })
 
-  const { data: software } = useQuery({
-    queryKey: ['software-count'],
-    queryFn: () => api.get<PaginatedResponse<unknown>>('/pkginfo?page_size=1'),
+  const { data: softwarePreviewPage } = useSoftwarePreviewPackages({
+    pageSize: 6,
   })
 
   const { data: manifests } = useQuery({
@@ -115,7 +118,8 @@ export default function DashboardPage() {
   })
 
   const runs = runsPage?.items ?? []
-  const totalTitles = software?.total ?? 0
+  const totalTitles = softwarePreviewPage?.total ?? 0
+  const softwarePreviewItems = softwarePreviewPage?.items ?? []
   const totalCatalogs = catalogs?.length ?? 0
   const totalManifests = manifests?.length ?? 0
   const totalRecipes = recipes?.length ?? 0
@@ -126,7 +130,14 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-10">
-      <h1 className="text-3xl font-bold">Dashboard</h1>
+      <h1
+        className={cn(
+          'text-3xl font-bold text-pretty',
+          munkiAccents.dashboard.pageTitle,
+        )}
+      >
+        Dashboard
+      </h1>
 
       <section className="space-y-4">
         <h2 className={munkiSectionHeadingClass()}>
@@ -141,11 +152,18 @@ export default function DashboardPage() {
             icon={Package}
             footer="Packages in the repository"
           >
-            <div
-              className="text-2xl font-bold"
-              style={{ fontVariantNumeric: 'tabular-nums' }}
-            >
-              {totalTitles}
+            <div className="flex min-h-10 items-center justify-between gap-3">
+              <div
+                className="text-2xl font-bold"
+                style={{ fontVariantNumeric: 'tabular-nums' }}
+              >
+                {totalTitles}
+              </div>
+              <SoftwareAvatarCircles
+                packages={softwarePreviewItems}
+                total={totalTitles}
+                interactive={false}
+              />
             </div>
           </StatLinkCard>
 

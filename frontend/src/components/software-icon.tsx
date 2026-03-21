@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { avatarColor, initials } from '@/lib/format'
 
 interface SoftwareIconProps {
@@ -9,6 +9,8 @@ interface SoftwareIconProps {
   iconName?: string | null
   size?: 'sm' | 'md' | 'lg'
   className?: string
+  /** Bump after uploading a new PNG so the browser reloads ``/icons/….png``. */
+  cacheRevision?: number
 }
 
 const sizeClasses = {
@@ -17,8 +19,9 @@ const sizeClasses = {
   lg: 'h-12 w-12 text-lg rounded-lg',
 }
 
-function iconUrl(name: string): string {
-  return `/icons/${encodeURIComponent(name)}.png`
+function iconUrl(name: string, cacheRevision?: number): string {
+  const base = `/icons/${encodeURIComponent(name)}.png`
+  return cacheRevision !== undefined ? `${base}?v=${cacheRevision}` : base
 }
 
 export function SoftwareIcon({
@@ -27,10 +30,15 @@ export function SoftwareIcon({
   iconName,
   size = 'sm',
   className = '',
+  cacheRevision,
 }: SoftwareIconProps) {
   const [imgFailed, setImgFailed] = useState(false)
 
   const candidateName = iconName || name
+
+  useEffect(() => {
+    setImgFailed(false)
+  }, [candidateName, cacheRevision])
   const alt = displayName || name
   const sizeClass = sizeClasses[size]
 
@@ -51,7 +59,7 @@ export function SoftwareIcon({
       <img
         width={48}
         height={48}
-        src={iconUrl(candidateName)}
+        src={iconUrl(candidateName, cacheRevision)}
         alt={alt}
         className="size-full object-cover"
         onError={() => setImgFailed(true)}

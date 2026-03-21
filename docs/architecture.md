@@ -43,12 +43,12 @@ AutoMunki is a web-based management platform for Munki and AutoPkg. It replaces 
 ### AutoPkg Run Flow
 
 1. User triggers run from UI or schedule fires
-2. Backend creates `autopkg_run` record, dispatches GitHub Actions workflow
-3. macOS runner installs Munki + AutoPkg, runs recipes
-4. For each recipe result, runner POSTs to `/api/v1/autopkg/runs/{id}/results`
-5. Backend stores results; items needing approval are queued
-6. Runner calls `/api/v1/autopkg/runs/{id}/complete` when done
-7. Git PRs are still created for the repo (backward compatibility)
+2. Backend creates `autopkg_run` with `runner_type` **github** or **local**
+3. **GitHub**: API dispatches `autopkg_cloud_runner.yml`. **Local**: no GitHub call — status stays **pending** until someone runs AutoPkg on a Mac using [local runner](local-autopkg-runner.md) steps
+4. macOS runner (Actions or your machine) runs AutoPkg / `cloud-autopkg-runner`
+5. For each recipe result, runner POSTs to `/api/v1/autopkg/runs/{id}/results`
+6. Backend stores results; items needing approval are queued
+7. Runner calls `/api/v1/autopkg/runs/{id}/complete` when done
 
 ### Catalog delivery
 
@@ -58,8 +58,8 @@ Munki catalog and manifest plists are compiled **on demand** when clients reques
 
 1. AutoMunki agent runs on managed Macs (triggered by Munki postflight)
 2. Agent collects hardware info, installed software, Munki install results
-3. Agent POSTs to `/api/v1/reports/checkin`
-4. Backend upserts machine record and stores install reports
+3. Agent (Python launchd job or Swift `postflight` beside `managedsoftwareupdate`) POSTs to `/api/v1/reports/checkin`
+4. Backend upserts `client_machine`, replaces `client_install_report` rows for that check-in, and the UI lists devices under **Reporting**
 5. Fleet dashboard shows compliance and inventory data
 
 ## Database Schema

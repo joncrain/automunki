@@ -1,10 +1,28 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import { type ColumnDef } from '@tanstack/react-table'
+import {
+  Activity,
+  Code2,
+  Download,
+  FileText,
+  History,
+  Package,
+  Pencil,
+  Plus,
+  Save,
+  ScanSearch,
+  Trash2,
+  X,
+} from 'lucide-react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { DataTable } from '@/components/data-table'
+import { PkginfoIconUpload } from '@/components/pkginfo-icon-upload'
+import { SoftwareInstallTimelineChart } from '@/components/reporting/software-install-timeline-chart'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -46,14 +64,116 @@ import {
   type AuditLogRead,
   api,
   type CatalogRead,
+  type ClientInstallReportListItem,
   type InstallItem,
   type ItemToCopy,
+  type PaginatedResponse,
   type PkgInfoDetail,
+  type PkgInfoInstallReportSummary,
   type ReceiptItem,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { munkiAccents } from '@/lib/munki-accents'
 import { cn } from '@/lib/utils'
+
+function softwareInstallReportStatusVariant(status: string) {
+  switch (status) {
+    case 'installed':
+      return 'default' as const
+    case 'failed':
+    case 'removal_failed':
+      return 'destructive' as const
+    case 'removed':
+      return 'secondary' as const
+    default:
+      return 'outline' as const
+  }
+}
+
+const SOFTWARE_INSTALL_REPORT_COLUMNS: ColumnDef<ClientInstallReportListItem>[] =
+  [
+    {
+      accessorKey: 'created_at',
+      header: 'Reported',
+      cell: ({ row }) => (
+        <span suppressHydrationWarning className="text-sm">
+          {formatDateTime(row.original.created_at)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'item_version',
+      header: 'Version',
+      cell: ({ row }) => row.original.item_version || '—',
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => (
+        <Badge
+          variant={softwareInstallReportStatusVariant(row.original.status)}
+        >
+          {row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: 'hostname',
+      header: 'Device',
+      cell: ({ row }) => (
+        <Link
+          href={`/reporting/devices/${row.original.machine_id}`}
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          {row.original.hostname || row.original.serial_number || '—'}
+        </Link>
+      ),
+    },
+    {
+      accessorKey: 'install_date',
+      header: 'Install time',
+      cell: ({ row }) =>
+        row.original.install_date ? (
+          <span suppressHydrationWarning className="text-sm">
+            {formatDateTime(row.original.install_date)}
+          </span>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      accessorKey: 'error_message',
+      header: 'Note',
+      cell: ({ row }) => (
+        <span className="line-clamp-2 max-w-[240px] text-sm text-muted-foreground">
+          {row.original.error_message || '—'}
+        </span>
+      ),
+    },
+  ]
+
+const softwareDetailTabContentClass = cn(
+  'space-y-4',
+  'animate-in fade-in-0 slide-in-from-bottom-1 duration-300',
+)
+
+function softwareDetailTabTrigger(activeRing: string) {
+  return cn(
+    'group/tab flex-none gap-2 px-4 py-2.5 min-h-11 rounded-lg border border-transparent',
+    'text-muted-foreground transition-[transform,box-shadow,background-color,border-color,color] duration-200 ease-out will-change-transform',
+    'hover:bg-background/80 hover:text-foreground',
+    'data-[state=inactive]:hover:scale-[1.03] data-[state=inactive]:hover:-translate-y-0.5',
+    'data-[state=inactive]:hover:border-border/35 data-[state=inactive]:hover:shadow-sm',
+    'data-[state=active]:scale-[1.02] data-[state=active]:bg-background data-[state=active]:shadow-md',
+    'data-[state=active]:border-border/60 data-[state=active]:hover:scale-[1.03]',
+    'motion-reduce:data-[state=inactive]:hover:scale-100 motion-reduce:data-[state=inactive]:hover:translate-y-0',
+    'motion-reduce:data-[state=active]:scale-100 motion-reduce:data-[state=active]:hover:scale-100',
+    activeRing,
+  )
+}
+
+const softwareTabIconClass =
+  'size-4 shrink-0 opacity-70 transition-[opacity,transform] duration-200 ease-out group-hover/tab:opacity-100 group-data-[state=inactive]/tab:group-hover/tab:scale-105 group-data-[state=active]/tab:opacity-100 group-data-[state=active]/tab:scale-110 group-data-[state=active]/tab:group-hover/tab:scale-[1.18] motion-reduce:group-hover/tab:scale-100 motion-reduce:group-data-[state=active]/tab:scale-100 motion-reduce:group-data-[state=active]/tab:group-hover/tab:scale-100'
 
 interface EditableFields {
   display_name: string
@@ -169,6 +289,9 @@ export default function SoftwareDetailPage() {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<EditableFields | null>(null)
   const [dirty, setDirty] = useState(false)
+  const [iconRevision, setIconRevision] = useState(0)
+  const [installReportPage, setInstallReportPage] = useState(1)
+  const [installReportPageSize, setInstallReportPageSize] = useState(25)
 
   const { data: pkg, isLoading } = useQuery({
     queryKey: ['pkginfo', id],
@@ -178,6 +301,36 @@ export default function SoftwareDetailPage() {
   const { data: auditTrail } = useQuery({
     queryKey: ['audit', 'pkg_info', id],
     queryFn: () => api.get<AuditLogRead[]>(`/audit/pkg_info/${id}`),
+  })
+
+  const { data: installSummary, isLoading: installSummaryLoading } = useQuery({
+    queryKey: ['pkg-install-report-summary', id],
+    queryFn: () =>
+      api.get<PkgInfoInstallReportSummary>(
+        `/pkginfo/${id}/install-reports/summary`,
+      ),
+    enabled: Boolean(id),
+  })
+
+  const { data: installReportRows, isLoading: installRowsLoading } = useQuery({
+    queryKey: [
+      'reports-installs',
+      'for-pkg',
+      id,
+      pkg?.name,
+      installReportPage,
+      installReportPageSize,
+    ],
+    queryFn: () => {
+      const params = new URLSearchParams()
+      params.set('page', String(installReportPage))
+      params.set('page_size', String(installReportPageSize))
+      params.set('item_name', pkg!.name)
+      return api.get<PaginatedResponse<ClientInstallReportListItem>>(
+        `/reports/installs?${params.toString()}`,
+      )
+    },
+    enabled: Boolean(pkg?.name),
   })
 
   const saveMutation = useMutation({
@@ -293,6 +446,7 @@ export default function SoftwareDetailPage() {
             displayName={pkg.display_name}
             iconName={pkg.icon_name}
             size="lg"
+            cacheRevision={iconRevision}
           />
           <div className={cn(munkiAccents.software.pageTitle)}>
             <h1 className="text-3xl font-bold text-pretty">
@@ -342,17 +496,73 @@ export default function SoftwareDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="details">
-        <TabsList>
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="detection">Detection</TabsTrigger>
-          <TabsTrigger value="install">Install Info</TabsTrigger>
-          <TabsTrigger value="scripts">Scripts</TabsTrigger>
-          <TabsTrigger value="audit">Audit Trail</TabsTrigger>
+      <Tabs defaultValue="details" className="gap-4">
+        <TabsList
+          className={cn(
+            'h-auto w-full flex-wrap gap-2 rounded-xl p-2 sm:p-2.5',
+            'border border-gruvbox-blue/20 bg-gradient-to-br from-muted/90 via-muted/55 to-muted/25',
+            'shadow-sm transition-[border-color,box-shadow] duration-300 ease-out',
+            'hover:border-gruvbox-blue/40 hover:shadow-md dark:border-gruvbox-blue/30 dark:hover:border-gruvbox-blue/50',
+          )}
+        >
+          <TabsTrigger
+            value="details"
+            className={softwareDetailTabTrigger(
+              'data-[state=active]:text-gruvbox-blue data-[state=active]:ring-2 data-[state=active]:ring-gruvbox-blue/30',
+            )}
+          >
+            <FileText className={softwareTabIconClass} aria-hidden />
+            Details
+          </TabsTrigger>
+          <TabsTrigger
+            value="detection"
+            className={softwareDetailTabTrigger(
+              'data-[state=active]:text-gruvbox-purple data-[state=active]:ring-2 data-[state=active]:ring-gruvbox-purple/30',
+            )}
+          >
+            <ScanSearch className={softwareTabIconClass} aria-hidden />
+            Detection
+          </TabsTrigger>
+          <TabsTrigger
+            value="install"
+            className={softwareDetailTabTrigger(
+              'data-[state=active]:text-gruvbox-green data-[state=active]:ring-2 data-[state=active]:ring-gruvbox-green/30',
+            )}
+          >
+            <Package className={softwareTabIconClass} aria-hidden />
+            Install Info
+          </TabsTrigger>
+          <TabsTrigger
+            value="scripts"
+            className={softwareDetailTabTrigger(
+              'data-[state=active]:text-gruvbox-orange data-[state=active]:ring-2 data-[state=active]:ring-gruvbox-orange/30',
+            )}
+          >
+            <Code2 className={softwareTabIconClass} aria-hidden />
+            Scripts
+          </TabsTrigger>
+          <TabsTrigger
+            value="reports"
+            className={softwareDetailTabTrigger(
+              'data-[state=active]:text-cyan-700 data-[state=active]:ring-2 data-[state=active]:ring-cyan-500/35 dark:data-[state=active]:text-cyan-400',
+            )}
+          >
+            <Activity className={softwareTabIconClass} aria-hidden />
+            Fleet installs
+          </TabsTrigger>
+          <TabsTrigger
+            value="audit"
+            className={softwareDetailTabTrigger(
+              'data-[state=active]:text-gruvbox-red data-[state=active]:ring-2 data-[state=active]:ring-gruvbox-red/30',
+            )}
+          >
+            <History className={softwareTabIconClass} aria-hidden />
+            Audit Trail
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Details Tab ── */}
-        <TabsContent value="details" className="space-y-4">
+        <TabsContent value="details" className={softwareDetailTabContentClass}>
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
@@ -379,12 +589,41 @@ export default function SoftwareDetailPage() {
                   editing={editing}
                   onChange={(v) => updateField('developer', v)}
                 />
-                <EditableField
-                  label="Icon Name"
-                  value={form?.icon_name ?? ''}
-                  editing={editing}
-                  onChange={(v) => updateField('icon_name', v)}
-                />
+                {editing ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-icon_name">Icon Name</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Stem without .png. The UI loads{' '}
+                      <span className="font-mono">/icons/</span> plus icon name
+                      or package name plus{' '}
+                      <span className="font-mono">.png</span>.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        id="edit-icon_name"
+                        className="max-w-md"
+                        value={form?.icon_name ?? ''}
+                        onChange={(e) =>
+                          updateField('icon_name', e.target.value)
+                        }
+                        placeholder={pkg.name}
+                      />
+                      <PkginfoIconUpload
+                        suggestedBasename={pkg.name}
+                        currentIconName={form?.icon_name ?? ''}
+                        onIconNameApplied={(v) => {
+                          updateField('icon_name', v)
+                          setIconRevision((r) => r + 1)
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <ReadOnlyField
+                    label="Icon Name"
+                    value={pkg.icon_name || '—'}
+                  />
+                )}
                 {editing ? (
                   <div className="col-span-full">
                     <Label>Description</Label>
@@ -612,7 +851,10 @@ export default function SoftwareDetailPage() {
           </div>
         </TabsContent>
         {/* ── Detection Tab ── */}
-        <TabsContent value="detection" className="space-y-4">
+        <TabsContent
+          value="detection"
+          className={softwareDetailTabContentClass}
+        >
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
@@ -760,7 +1002,7 @@ export default function SoftwareDetailPage() {
         </TabsContent>
 
         {/* ── Install Info Tab ── */}
-        <TabsContent value="install" className="space-y-4">
+        <TabsContent value="install" className={softwareDetailTabContentClass}>
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
@@ -864,7 +1106,7 @@ export default function SoftwareDetailPage() {
         </TabsContent>
 
         {/* ── Scripts Tab ── */}
-        <TabsContent value="scripts" className="space-y-4">
+        <TabsContent value="scripts" className={softwareDetailTabContentClass}>
           <ScriptField
             label="preinstall_script"
             value={
@@ -914,8 +1156,126 @@ export default function SoftwareDetailPage() {
             )}
         </TabsContent>
 
+        {/* ── Fleet install reports (client check-in) ── */}
+        <TabsContent value="reports" className={softwareDetailTabContentClass}>
+          <p className="text-sm text-muted-foreground">
+            Rows match Munki{' '}
+            <span className="font-mono text-xs">item_name</span> &mdash;{' '}
+            <span className="font-mono text-xs">{pkg.name}</span>. Each device
+            keeps only the latest snapshot per check-in.
+          </p>
+
+          {installSummaryLoading ? (
+            <p className="text-sm text-muted-foreground">Loading reports…</p>
+          ) : installSummary ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Total rows
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-semibold tabular-nums">
+                      {installSummary.total_reports}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Devices
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-semibold tabular-nums">
+                      {installSummary.unique_machines}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Installed
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-semibold tabular-nums text-chart-2">
+                      {installSummary.by_status.installed ?? 0}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Failed
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-semibold tabular-nums text-destructive">
+                      {(installSummary.by_status.failed ?? 0) +
+                        (installSummary.by_status.removal_failed ?? 0)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      failed + removal_failed
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-base">
+                    Activity (last 90 days)
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    By install time, or report time if missing
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <SoftwareInstallTimelineChart
+                    history={installSummary.timeline}
+                    totalReports={installSummary.total_reports}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+                  <CardTitle className="text-base">Recent reports</CardTitle>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link
+                      href={`/reporting/installs?item_name=${encodeURIComponent(pkg.name)}`}
+                    >
+                      Open in Reporting
+                    </Link>
+                  </Button>
+                </CardHeader>
+                <CardContent className="px-0 sm:px-6">
+                  <DataTable
+                    columns={SOFTWARE_INSTALL_REPORT_COLUMNS}
+                    data={installReportRows?.items ?? []}
+                    pageCount={installReportRows?.total_pages ?? 1}
+                    page={installReportPage}
+                    pageSize={installReportPageSize}
+                    total={installReportRows?.total}
+                    onPageChange={(p) => setInstallReportPage(p)}
+                    onPageSizeChange={(size) => {
+                      setInstallReportPageSize(size)
+                      setInstallReportPage(1)
+                    }}
+                    isLoading={installRowsLoading}
+                    hideColumnPicker
+                  />
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
+        </TabsContent>
+
         {/* ── Audit Trail Tab ── */}
-        <TabsContent value="audit" className="space-y-4">
+        <TabsContent value="audit" className={softwareDetailTabContentClass}>
           {auditTrail?.length ? (
             <div className="space-y-2">
               {auditTrail.map((entry) => (

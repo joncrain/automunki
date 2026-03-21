@@ -10,10 +10,14 @@ with open("metadata_cache.json") as f:
     cache = json.load(f)
 
 payload = json.dumps({"cache_data": cache}).encode()
+headers = {"Content-Type": "application/json"}
+token = os.environ.get("AUTOMUNKI_API_TOKEN", "")
+if token:
+    headers["Authorization"] = f"Bearer {token}"
 req = urllib.request.Request(
     f"{api_base}/metadata-cache",
     data=payload,
-    headers={"Content-Type": "application/json"},
+    headers=headers,
     method="PUT",
 )
 try:

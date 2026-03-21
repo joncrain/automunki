@@ -6,7 +6,7 @@ from automunki.models.autopkg import (
     TrustChangeRequest,
 )
 from automunki.models.base import Base
-from automunki.models.client import ClientInstallReport, ClientMachine
+from automunki.models.client import ClientInstallReport, ClientMachine, ClientMachineCheckin
 from automunki.models.munki import (
     Catalog,
     Manifest,
@@ -29,6 +29,7 @@ __all__ = [
     "Catalog",
     "ClientInstallReport",
     "ClientMachine",
+    "ClientMachineCheckin",
     "Manifest",
     "ManifestCatalog",
     "ManifestInclusion",

@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
@@ -7,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from automunki.api.deps import get_session
 from automunki.core.security import current_optional_user
+from automunki.models.client import ClientInstallReport
 from automunki.models.munki import Catalog, PkgInfo, PkgInfoCatalog
 from automunki.models.user import User
 from automunki.schemas.common import PaginatedResponse
@@ -22,6 +24,8 @@ from automunki.services.munki import compile_pkginfo_plist
 from automunki.services.promotion import promote_pkginfo
 
 router = APIRouter(prefix="/pkginfo", tags=["pkginfo"])
+
+INSTALL_REPORT_TIMELINE_DAYS = 90
 
 
 def _to_summary(pkg: PkgInfo) -> dict:
@@ -176,6 +180,80 @@ async def get_pkginfo_plist(
         raise HTTPException(status_code=404, detail="PkgInfo not found")
     plist_data = await compile_pkginfo_plist(pkg)
     return Response(content=plist_data, media_type="application/xml")
+
+
+@router.get("/{pkg_id}/install-reports/summary")
+async def pkginfo_install_reports_summary(
+    pkg_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Counts by status, distinct machines, and daily install events for this pkginfo name."""
+    result = await session.execute(select(PkgInfo).where(PkgInfo.id == pkg_id))
+    pkg = result.scalar_one_or_none()
+    if not pkg:
+        raise HTTPException(status_code=404, detail="PkgInfo not found")
+
+    name = pkg.name
+
+    total_reports = (
+        await session.scalar(
+            select(func.count()).select_from(ClientInstallReport).where(ClientInstallReport.item_name == name)
+        )
+    ) or 0
+
+    unique_machines = (
+        await session.scalar(
+            select(func.count(func.distinct(ClientInstallReport.machine_id)))
+            .select_from(ClientInstallReport)
+            .where(ClientInstallReport.item_name == name)
+        )
+    ) or 0
+
+    status_rows = (
+        await session.execute(
+            select(ClientInstallReport.status, func.count())
+            .where(ClientInstallReport.item_name == name)
+            .group_by(ClientInstallReport.status)
+        )
+    ).all()
+    by_status = {row[0]: int(row[1]) for row in status_rows}
+
+    event_ts = func.coalesce(ClientInstallReport.install_date, ClientInstallReport.created_at)
+    cutoff = datetime.now(UTC) - timedelta(days=INSTALL_REPORT_TIMELINE_DAYS - 1)
+    day_trunc = func.date_trunc("day", event_ts)
+    timeline_rows = (
+        await session.execute(
+            select(day_trunc, func.count(ClientInstallReport.id))
+            .where(ClientInstallReport.item_name == name)
+            .where(event_ts >= cutoff)
+            .group_by(day_trunc)
+            .order_by(day_trunc)
+        )
+    ).all()
+
+    counts: dict[date, int] = {}
+    for dt, cnt in timeline_rows:
+        if isinstance(dt, datetime):
+            d = dt.astimezone(UTC).date()
+        else:
+            d = dt  # pragma: no cover
+        counts[d] = int(cnt)
+
+    end = datetime.now(UTC).date()
+    start = end - timedelta(days=INSTALL_REPORT_TIMELINE_DAYS - 1)
+    series: list[dict[str, int | str]] = []
+    cur = start
+    while cur <= end:
+        series.append({"date": cur.isoformat(), "count": counts.get(cur, 0)})
+        cur += timedelta(days=1)
+
+    return {
+        "item_name": name,
+        "total_reports": total_reports,
+        "unique_machines": unique_machines,
+        "by_status": by_status,
+        "timeline": series,
+    }
 
 
 @router.put("/{pkg_id}", response_model=PkgInfoRead)

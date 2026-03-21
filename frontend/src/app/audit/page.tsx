@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/select'
 import { type AuditLogRead, api, type PaginatedResponse } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { munkiAccents } from '@/lib/munki-accents'
+import { cn } from '@/lib/utils'
 
 const ACTION_OPTIONS = [
   'create',
@@ -137,7 +139,14 @@ export default function AuditPage() {
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
-      <h1 className="text-3xl font-bold">Audit Log</h1>
+      <h1
+        className={cn(
+          'text-3xl font-bold text-pretty',
+          munkiAccents.audit.pageTitle,
+        )}
+      >
+        Audit Log
+      </h1>
 
       <div className="flex flex-wrap items-center gap-2">
         <Select

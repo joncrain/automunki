@@ -10,6 +10,7 @@ from automunki.api.routes.auth import router as auth_router
 from automunki.api.routes.auth import users_router
 from automunki.api.routes.autopkg import router as autopkg_router
 from automunki.api.routes.catalogs import router as catalogs_router
+from automunki.api.routes.icons import router as icons_router
 from automunki.api.routes.manifests import router as manifests_router
 from automunki.api.routes.pkginfo import router as pkginfo_router
 from automunki.api.routes.repo import router as repo_router
@@ -67,6 +68,7 @@ api_prefix = "/api/v1"
 app.include_router(auth_router, prefix=api_prefix)
 app.include_router(users_router, prefix=api_prefix)
 app.include_router(pkginfo_router, prefix=api_prefix)
+app.include_router(icons_router, prefix=api_prefix)
 app.include_router(catalogs_router, prefix=api_prefix)
 app.include_router(manifests_router, prefix=api_prefix)
 app.include_router(autopkg_router, prefix=api_prefix)

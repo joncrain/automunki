@@ -2,14 +2,20 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ChevronDown, ChevronRight, Play, Search, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Play,
+  Search,
+  X,
+} from 'lucide-react'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { DataTable } from '@/components/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -21,6 +27,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -33,8 +40,17 @@ import {
   type AutoPkgRunRead,
   api,
   type PaginatedResponse,
+  type UiSettingsRead,
 } from '@/lib/api'
+import {
+  buildLocalRunnerShellCommand,
+  canTriggerRunRecipe,
+  LocalRunnerToastBody,
+  RUNNER_STORAGE_KEY,
+} from '@/lib/autopkg-run'
 import { formatDateTime } from '@/lib/format'
+import { munkiAccents } from '@/lib/munki-accents'
+import { cn } from '@/lib/utils'
 
 const STATUS_OPTIONS = [
   'pending',
@@ -43,14 +59,6 @@ const STATUS_OPTIONS = [
   'failed',
   'cancelled',
 ]
-
-/** Trust failed / pending approval: excluded from runner config and cannot be selected. */
-function canTriggerRunRecipe(recipe: AutoPkgRecipeRead): boolean {
-  return (
-    recipe.trust_status !== 'failed' &&
-    recipe.trust_status !== 'pending_approval'
-  )
-}
 
 function lastRecipeRunLooksOk(status: string): boolean {
   return ['success', 'imported', 'no_change'].includes(status)
@@ -79,8 +87,14 @@ export default function AutoPkgRunsPage() {
     'status',
     parseAsString.withDefault(''),
   )
-  const [expandedRun, setExpandedRun] = useState<string | null>(null)
+  const [resultsRunId, setResultsRunId] = useState<string | null>(null)
   const queryClient = useQueryClient()
+
+  const { data: resultsRun, isLoading: resultsRunLoading } = useQuery({
+    queryKey: ['autopkg-run', resultsRunId],
+    queryFn: () => api.get<AutoPkgRunRead>(`/autopkg/runs/${resultsRunId!}`),
+    enabled: !!resultsRunId,
+  })
 
   const { data, isLoading } = useQuery({
     queryKey: ['autopkg-runs', page, pageSize, status],
@@ -96,12 +110,28 @@ export default function AutoPkgRunsPage() {
   })
 
   const triggerMutation = useMutation({
-    mutationFn: (recipeNames: string[] | null) =>
+    mutationFn: (args: {
+      recipeNames: string[] | null
+      runner: 'github' | 'local'
+    }) =>
       api.post<AutoPkgRunRead>('/autopkg/runs', {
-        recipe_names: recipeNames,
+        recipe_names: args.recipeNames,
+        runner: args.runner,
       }),
-    onSuccess: () => {
-      toast.success('AutoPkg run triggered')
+    onSuccess: (run) => {
+      if (run.runner_type === 'local') {
+        const cmd = buildLocalRunnerShellCommand(run)
+        toast.success('Local run registered — run from your clone', {
+          description: <LocalRunnerToastBody cmd={cmd} />,
+          duration: Infinity,
+          closeButton: true,
+        })
+      } else {
+        toast.success('AutoPkg run triggered on GitHub Actions', {
+          description: `Run ID: ${run.id}`,
+          duration: 15_000,
+        })
+      }
       queryClient.invalidateQueries({ queryKey: ['autopkg-runs'] })
       queryClient.invalidateQueries({ queryKey: ['autopkg-recipes'] })
       queryClient.invalidateQueries({ queryKey: ['autopkg-recipes-enabled'] })
@@ -118,15 +148,17 @@ export default function AutoPkgRunsPage() {
           variant="ghost"
           size="sm"
           aria-label={
-            expandedRun === row.original.id ? 'Collapse run' : 'Expand run'
+            resultsRunId === row.original.id
+              ? 'Close run results'
+              : 'View run results'
           }
           onClick={() =>
-            setExpandedRun(
-              expandedRun === row.original.id ? null : row.original.id,
+            setResultsRunId(
+              resultsRunId === row.original.id ? null : row.original.id,
             )
           }
         >
-          {expandedRun === row.original.id ? (
+          {resultsRunId === row.original.id ? (
             <ChevronDown className="h-4 w-4" />
           ) : (
             <ChevronRight className="h-4 w-4" />
@@ -140,6 +172,15 @@ export default function AutoPkgRunsPage() {
       cell: ({ row }) => (
         <Badge variant={statusVariant(row.original.status)}>
           {row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: 'runner_type',
+      header: 'Runner',
+      cell: ({ row }) => (
+        <Badge variant="secondary">
+          {row.original.runner_type === 'local' ? 'Local Mac' : 'GitHub'}
         </Badge>
       ),
     },
@@ -189,9 +230,18 @@ export default function AutoPkgRunsPage() {
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">AutoPkg Runs</h1>
+        <h1
+          className={cn(
+            'text-3xl font-bold text-pretty',
+            munkiAccents.autopkg.pageTitle,
+          )}
+        >
+          AutoPkg Runs
+        </h1>
         <TriggerRunDialog
-          onTrigger={(recipeNames) => triggerMutation.mutate(recipeNames)}
+          onTrigger={(recipeNames, runner) =>
+            triggerMutation.mutate({ recipeNames, runner })
+          }
           isPending={triggerMutation.isPending}
         />
       </div>
@@ -250,12 +300,52 @@ export default function AutoPkgRunsPage() {
         />
       </div>
 
-      {expandedRun &&
-        data?.items &&
-        (() => {
-          const run = data.items.find((r) => r.id === expandedRun)
-          return run ? <RunDetail run={run} /> : null
-        })()}
+      <Dialog
+        open={!!resultsRunId}
+        onOpenChange={(open) => {
+          if (!open) setResultsRunId(null)
+        }}
+      >
+        <DialogContent
+          showCloseButton
+          className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+        >
+          <DialogHeader className="shrink-0 border-b px-6 pt-6 pr-14 pb-4">
+            <DialogTitle>Run results</DialogTitle>
+            <DialogDescription asChild>
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                {resultsRun && !resultsRunLoading ? (
+                  <>
+                    <span suppressHydrationWarning>
+                      {formatDateTime(resultsRun.created_at)}
+                    </span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="capitalize">{resultsRun.status}</span>
+                    {resultsRun.total_recipes != null && (
+                      <>
+                        <span className="text-muted-foreground">·</span>
+                        <span>{resultsRun.total_recipes} recipes</span>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">Loading run…</span>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          {resultsRunLoading || !resultsRun ? (
+            <div className="flex min-h-[min(200px,40vh)] items-center justify-center px-6 py-10">
+              <Loader2
+                className="h-8 w-8 animate-spin text-muted-foreground"
+                aria-hidden
+              />
+            </div>
+          ) : (
+            <RunResultsScrollBody run={resultsRun} />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -329,12 +419,19 @@ function TriggerRunDialog({
   onTrigger,
   isPending,
 }: {
-  onTrigger: (recipeNames: string[] | null) => void
+  onTrigger: (recipeNames: string[] | null, runner: 'github' | 'local') => void
   isPending: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [recipeSearch, setRecipeSearch] = useState('')
+  const [runner, setRunner] = useState<'github' | 'local'>('github')
+
+  const { data: uiSettings } = useQuery({
+    queryKey: ['settings', 'ui'],
+    queryFn: () => api.get<UiSettingsRead>('/settings/ui'),
+    enabled: open,
+  })
 
   const { data: recipes } = useQuery({
     queryKey: ['autopkg-recipes-enabled'],
@@ -342,6 +439,24 @@ function TriggerRunDialog({
       api.get<AutoPkgRecipeRead[]>('/autopkg/recipes?enabled_only=true'),
     enabled: open,
   })
+
+  useEffect(() => {
+    if (!open) return
+    const saved =
+      typeof window !== 'undefined'
+        ? localStorage.getItem(RUNNER_STORAGE_KEY)
+        : null
+    if (saved === 'github' || saved === 'local') {
+      setRunner(saved)
+      return
+    }
+    if (
+      uiSettings?.autopkg_runner_mode === 'github' ||
+      uiSettings?.autopkg_runner_mode === 'local'
+    ) {
+      setRunner(uiSettings.autopkg_runner_mode)
+    }
+  }, [open, uiSettings])
 
   const filtered = (recipes ?? []).filter((r) =>
     recipeSearch
@@ -385,7 +500,8 @@ function TriggerRunDialog({
       }
       names = runnableNames
     }
-    onTrigger(names)
+    localStorage.setItem(RUNNER_STORAGE_KEY, runner)
+    onTrigger(names, runner)
     setOpen(false)
     setSelected(new Set())
     setRecipeSearch('')
@@ -410,6 +526,27 @@ function TriggerRunDialog({
         </DialogHeader>
 
         <div className="space-y-3">
+          <div className="grid gap-2">
+            <Label htmlFor="autopkg-runner">Runner</Label>
+            <Select
+              value={runner}
+              onValueChange={(v) => setRunner(v as 'github' | 'local')}
+            >
+              <SelectTrigger id="autopkg-runner" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="github">GitHub Actions</SelectItem>
+                <SelectItem value="local">Local Mac (manual script)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Local creates a pending run — execute AutoPkg on a Mac using the
+              repo doc{' '}
+              <code className="text-xs">docs/local-autopkg-runner.md</code>.
+            </p>
+          </div>
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -508,78 +645,75 @@ function TriggerRunDialog({
   )
 }
 
-function RunDetail({ run }: { run: AutoPkgRunRead }) {
+function statusVariantResult(s: string) {
+  switch (s) {
+    case 'success':
+    case 'imported':
+      return 'default' as const
+    case 'failed':
+    case 'trust_failed':
+      return 'destructive' as const
+    default:
+      return 'secondary' as const
+  }
+}
+
+/** Scrollable results list inside the run dialog (header is fixed above). */
+function RunResultsScrollBody({ run }: { run: AutoPkgRunRead }) {
   if (!run?.results?.length) {
     return (
-      <Card>
-        <CardContent className="p-4">
-          <p className="text-muted-foreground">No results for this run</p>
-        </CardContent>
-      </Card>
+      <div className="max-h-[min(65vh,calc(85vh-9rem))] overflow-y-auto px-6 py-4">
+        <p className="text-muted-foreground text-sm">No results for this run</p>
+      </div>
     )
   }
 
-  const statusVariantResult = (s: string) => {
-    switch (s) {
-      case 'success':
-      case 'imported':
-        return 'default' as const
-      case 'failed':
-      case 'trust_failed':
-        return 'destructive' as const
-      default:
-        return 'secondary' as const
-    }
-  }
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Run Results</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-2">
-          {run.results.map((result) => (
-            <div
-              key={result.id}
-              className="flex items-center justify-between rounded-md border p-3"
-            >
-              <div className="flex items-center gap-3">
-                <Badge variant={statusVariantResult(result.status)}>
-                  {result.status}
-                </Badge>
-                <span className="font-medium">
-                  {result.imported_display_name?.trim() || result.recipe_name}
+    <div className="max-h-[min(65vh,calc(85vh-9rem))] min-h-0 overflow-y-auto px-6 py-4">
+      <div className="space-y-2">
+        {run.results.map((result) => (
+          <div
+            key={result.id}
+            className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+              <Badge
+                variant={statusVariantResult(result.status)}
+                className="shrink-0"
+              >
+                {result.status}
+              </Badge>
+              <span className="font-medium break-words">
+                {result.imported_display_name?.trim() || result.recipe_name}
+              </span>
+              {result.imported_version && (
+                <span className="text-sm text-muted-foreground">
+                  v{result.imported_version}
                 </span>
-                {result.imported_version && (
-                  <span className="text-sm text-muted-foreground">
-                    v{result.imported_version}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant={
-                    result.approval_status === 'approved' ||
-                    result.approval_status === 'auto_approved'
-                      ? 'default'
-                      : result.approval_status === 'pending'
-                        ? 'secondary'
-                        : 'destructive'
-                  }
-                >
-                  {result.approval_status}
-                </Badge>
-                {result.duration_seconds != null && (
-                  <span className="text-sm text-muted-foreground">
-                    {result.duration_seconds}s
-                  </span>
-                )}
-              </div>
+              )}
             </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Badge
+                variant={
+                  result.approval_status === 'approved' ||
+                  result.approval_status === 'auto_approved'
+                    ? 'default'
+                    : result.approval_status === 'pending'
+                      ? 'secondary'
+                      : 'destructive'
+                }
+              >
+                {result.approval_status}
+              </Badge>
+              {result.duration_seconds != null && (
+                <span className="text-sm text-muted-foreground">
+                  {result.duration_seconds}s
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }

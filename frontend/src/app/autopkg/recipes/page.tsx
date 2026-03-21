@@ -1,11 +1,13 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef, VisibilityState } from '@tanstack/react-table'
 import {
   Compass,
+  FileUp,
   GripVertical,
   Loader2,
+  Play,
   Plus,
   RefreshCw,
   Search,
@@ -17,9 +19,11 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { parseAsString, useQueryState } from 'nuqs'
-import { useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { DataTable } from '@/components/data-table'
+import { ColumnVisibilityMenu, DataTable } from '@/components/data-table'
+import { PkginfoIconUpload } from '@/components/pkginfo-icon-upload'
+import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,7 +46,39 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { type AutoPkgRecipeRead, api, type CatalogRead } from '@/lib/api'
+import {
+  type AutoPkgRecipeRead,
+  type AutoPkgRunRead,
+  api,
+  type CatalogRead,
+} from '@/lib/api'
+import {
+  buildLocalRunnerShellCommand,
+  canTriggerRunRecipe,
+  LocalRunnerToastBody,
+  QuickRunDialog,
+} from '@/lib/autopkg-run'
+import { formatDateTime } from '@/lib/format'
+import { munkiAccents } from '@/lib/munki-accents'
+import { cn } from '@/lib/utils'
+
+/** XML/YAML text, or binary plist as base64 (matches backend ``import-override``). */
+async function fileToImportOverrideContent(file: File): Promise<string> {
+  const buf = await file.arrayBuffer()
+  const u8 = new Uint8Array(buf)
+  const head = new TextDecoder('latin1').decode(u8.subarray(0, 8))
+  if (head === 'bplist00') {
+    let binary = ''
+    const chunk = 8192
+    for (let i = 0; i < u8.length; i += chunk) {
+      binary += String.fromCharCode(
+        ...u8.subarray(i, Math.min(i + chunk, u8.length)),
+      )
+    }
+    return btoa(binary)
+  }
+  return new TextDecoder('utf-8').decode(u8)
+}
 
 function trustStatusBadge(status: string) {
   switch (status) {
@@ -92,6 +128,14 @@ function extractPkginfo(
   return pkginfo as Record<string, unknown>
 }
 
+/** Split catalog names from the recipe UI (commas, slashes, or pipes). */
+function parseCatalogListInput(raw: string): string[] {
+  return raw
+    .split(/[,/|]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 /** Munki catalog names from ``Input.pkginfo.catalogs`` on the recipe. */
 function pkginfoCatalogsFromInput(
   inputVars: Record<string, unknown> | null | undefined,
@@ -103,18 +147,43 @@ function pkginfoCatalogsFromInput(
   return []
 }
 
+/** Canonical recipe Input dict: override plist first, then legacy ``input_variables``. */
+function recipeInputDict(
+  recipe: AutoPkgRecipeRead,
+): Record<string, unknown> | null {
+  const od = recipe.override_data as Record<string, unknown> | null | undefined
+  if (od?.Input && typeof od.Input === 'object') {
+    return od.Input as Record<string, unknown>
+  }
+  return (recipe.input_variables as Record<string, unknown> | null) ?? null
+}
+
+function pkginfoCatalogsFromRecipe(recipe: AutoPkgRecipeRead): string[] {
+  return pkginfoCatalogsFromInput(recipeInputDict(recipe))
+}
+
+function recipeInputName(recipe: AutoPkgRecipeRead): string {
+  const inp = recipeInputDict(recipe)
+  const n = inp?.NAME
+  return typeof n === 'string' && n.trim() ? n : ''
+}
+
 function makeColumns(
   onToggleEnabled: (id: string, enabled: boolean) => void,
   onToggleAutoPromote: (id: string, auto: boolean) => void,
   onEdit: (recipe: AutoPkgRecipeRead) => void,
+  onRunRecipe: (recipe: AutoPkgRecipeRead) => void,
   onVerifyTrust: (id: string) => void,
   onDelete: (recipe: AutoPkgRecipeRead) => void,
   verifyingTrustId: string | null,
+  pendingRunRecipeName: string | null,
+  isRunPending: boolean,
 ): ColumnDef<AutoPkgRecipeRead>[] {
   return [
     {
       accessorKey: 'name',
       header: 'Name',
+      enableHiding: false,
       cell: ({ row }) => (
         <button
           type="button"
@@ -138,6 +207,56 @@ function makeColumns(
           {row.original.identifier}
         </span>
       ),
+    },
+    {
+      id: 'input_name',
+      accessorFn: (row) => recipeInputName(row),
+      header: 'Input NAME',
+      cell: ({ row }) => {
+        const n = recipeInputName(row.original)
+        return n ? (
+          <span className="truncate text-sm" title={n}>
+            {n}
+          </span>
+        ) : (
+          '—'
+        )
+      },
+    },
+    {
+      accessorKey: 'parent_recipe',
+      header: 'Parent recipe',
+      cell: ({ row }) => {
+        const p = row.original.parent_recipe
+        if (!p) return '—'
+        return (
+          <span
+            className="max-w-[200px] truncate font-mono text-xs text-muted-foreground"
+            title={p}
+          >
+            {p}
+          </span>
+        )
+      },
+    },
+    {
+      accessorKey: 'source_repo_full_name',
+      header: 'Repo',
+      cell: ({ row }) => {
+        const repo = row.original.source_repo_full_name
+        if (!repo) return '—'
+        return (
+          <a
+            href={`https://github.com/${repo}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block max-w-[160px] truncate font-mono text-xs text-primary underline-offset-4 hover:underline"
+            title={repo}
+          >
+            {repo}
+          </a>
+        )
+      },
     },
     {
       accessorKey: 'trust_status',
@@ -195,9 +314,7 @@ function makeColumns(
       id: 'pkginfo_catalogs',
       header: 'Catalogs',
       cell: ({ row }) => {
-        const cats = pkginfoCatalogsFromInput(
-          row.original.input_variables as Record<string, unknown> | null,
-        )
+        const cats = pkginfoCatalogsFromRecipe(row.original)
         if (cats.length === 0) return '—'
         return (
           <div className="flex flex-wrap gap-1">
@@ -212,7 +329,7 @@ function makeColumns(
     },
     {
       accessorKey: 'last_run_status',
-      header: 'Last Run',
+      header: 'Run status',
       cell: ({ row }) => {
         const st = row.original.last_run_status
         if (!st) return '—'
@@ -221,8 +338,74 @@ function makeColumns(
       },
     },
     {
+      accessorKey: 'last_run_at',
+      header: 'Last run at',
+      cell: ({ row }) => {
+        const at = row.original.last_run_at
+        if (!at) return '—'
+        return (
+          <span
+            suppressHydrationWarning
+            className="whitespace-nowrap text-sm text-muted-foreground"
+          >
+            {formatDateTime(at)}
+          </span>
+        )
+      },
+    },
+    {
+      accessorKey: 'updated_at',
+      header: 'Updated',
+      cell: ({ row }) => (
+        <span
+          suppressHydrationWarning
+          className="whitespace-nowrap text-sm text-muted-foreground"
+        >
+          {formatDateTime(row.original.updated_at)}
+        </span>
+      ),
+    },
+    {
+      id: 'run',
+      header: '',
+      enableHiding: false,
+      size: 48,
+      cell: ({ row }) => {
+        const r = row.original
+        const runnable = canTriggerRunRecipe(r)
+        const isThisPending =
+          pendingRunRecipeName !== null && pendingRunRecipeName === r.name
+        return (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            aria-label={`Run recipe ${r.name}`}
+            title={
+              runnable
+                ? 'Run this recipe'
+                : 'Trust failed or pending — cannot run until resolved'
+            }
+            disabled={!runnable || isRunPending}
+            onClick={(e) => {
+              e.stopPropagation()
+              onRunRecipe(r)
+            }}
+          >
+            {isThisPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
+          </Button>
+        )
+      },
+    },
+    {
       id: 'actions',
       header: '',
+      enableHiding: false,
       cell: ({ row }) =>
         row.original.is_override ? (
           <Button
@@ -242,6 +425,20 @@ function makeColumns(
   ]
 }
 
+const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
+  identifier: true,
+  input_name: false,
+  parent_recipe: false,
+  source_repo_full_name: false,
+  trust_status: true,
+  is_enabled: true,
+  auto_promote: true,
+  pkginfo_catalogs: true,
+  last_run_status: true,
+  last_run_at: true,
+  updated_at: false,
+}
+
 export default function RecipesPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useQueryState(
@@ -255,6 +452,18 @@ export default function RecipesPage() {
   const [editingRecipe, setEditingRecipe] = useState<AutoPkgRecipeRead | null>(
     null,
   )
+  const [quickRunTarget, setQuickRunTarget] = useState<
+    AutoPkgRecipeRead | 'all' | null
+  >(null)
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
+    DEFAULT_COLUMN_VISIBILITY,
+  )
+
+  const [importOpen, setImportOpen] = useState(false)
+  const [importContent, setImportContent] = useState('')
+  const [importName, setImportName] = useState('')
+  const [importSourceRepo, setImportSourceRepo] = useState('')
+  const [importRefreshTrust, setImportRefreshTrust] = useState(true)
 
   const { data: recipes, isLoading } = useQuery({
     queryKey: ['autopkg-recipes'],
@@ -316,6 +525,33 @@ export default function RecipesPage() {
   const [deletingRecipe, setDeletingRecipe] =
     useState<AutoPkgRecipeRead | null>(null)
 
+  const importOverrideMutation = useMutation({
+    mutationFn: (body: {
+      content: string
+      name?: string | null
+      source_repo_full_name?: string | null
+      refresh_trust: boolean
+    }) =>
+      api.post<AutoPkgRecipeRead>('/autopkg/recipes/import-override', {
+        content: body.content,
+        name: body.name?.trim() || null,
+        source_repo_full_name: body.source_repo_full_name?.trim() || null,
+        is_enabled: true,
+        auto_promote: false,
+        refresh_trust: body.refresh_trust,
+      }),
+    onSuccess: (recipe) => {
+      toast.success(`Imported override ${recipe.name}`)
+      setImportOpen(false)
+      setImportContent('')
+      setImportName('')
+      setImportSourceRepo('')
+      setImportRefreshTrust(true)
+      queryClient.invalidateQueries({ queryKey: ['autopkg-recipes'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
   const inlineDeleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/autopkg/recipes/${id}`),
     onSuccess: () => {
@@ -326,27 +562,87 @@ export default function RecipesPage() {
     onError: (err: Error) => toast.error(err.message),
   })
 
+  const triggerRunMutation = useMutation({
+    mutationFn: (args: {
+      recipeNames: string[] | null
+      runner: 'github' | 'local'
+    }) =>
+      api.post<AutoPkgRunRead>('/autopkg/runs', {
+        recipe_names: args.recipeNames,
+        runner: args.runner,
+      }),
+    onSuccess: (run) => {
+      if (run.runner_type === 'local') {
+        const cmd = buildLocalRunnerShellCommand(run)
+        toast.success('Local run registered — run from your clone', {
+          description: <LocalRunnerToastBody cmd={cmd} />,
+          duration: Infinity,
+          closeButton: true,
+        })
+      } else {
+        toast.success('AutoPkg run triggered on GitHub Actions', {
+          description: `Run ID: ${run.id}`,
+          duration: 15_000,
+        })
+      }
+      queryClient.invalidateQueries({ queryKey: ['autopkg-runs'] })
+      queryClient.invalidateQueries({ queryKey: ['autopkg-recipes'] })
+      queryClient.invalidateQueries({ queryKey: ['autopkg-recipes-enabled'] })
+    },
+    onError: (err: Error) =>
+      toast.error(`Failed to trigger run: ${err.message}`),
+  })
+
+  const pendingRunRecipeName =
+    triggerRunMutation.isPending &&
+    triggerRunMutation.variables?.recipeNames?.length === 1
+      ? triggerRunMutation.variables.recipeNames[0]
+      : null
+
+  const pendingRunAll =
+    triggerRunMutation.isPending &&
+    (triggerRunMutation.variables?.recipeNames === null ||
+      triggerRunMutation.variables?.recipeNames === undefined)
+
   const onToggleEnabled = (id: string, val: boolean) =>
     updateMutation.mutate({ id, is_enabled: val })
 
   const onToggleAutoPromote = (id: string, val: boolean) =>
     updateMutation.mutate({ id, auto_promote: val })
 
-  const columns = makeColumns(
-    onToggleEnabled,
-    onToggleAutoPromote,
-    setEditingRecipe,
-    (id) => verifyTrustMutation.mutate(id),
-    setDeletingRecipe,
-    verifyingTrustId,
+  const columns = useMemo(
+    () =>
+      makeColumns(
+        onToggleEnabled,
+        onToggleAutoPromote,
+        setEditingRecipe,
+        (recipe) => setQuickRunTarget(recipe),
+        (id) => verifyTrustMutation.mutate(id),
+        setDeletingRecipe,
+        verifyingTrustId,
+        pendingRunRecipeName,
+        triggerRunMutation.isPending,
+      ),
+    [
+      verifyingTrustId,
+      pendingRunRecipeName,
+      triggerRunMutation.isPending,
+      verifyTrustMutation,
+    ],
   )
 
   const filtered = (recipes ?? []).filter((r) => {
     if (search) {
       const q = search.toLowerCase()
+      const inputName = recipeInputName(r).toLowerCase()
+      const parent = (r.parent_recipe ?? '').toLowerCase()
+      const repo = (r.source_repo_full_name ?? '').toLowerCase()
       if (
         !r.name.toLowerCase().includes(q) &&
-        !r.identifier.toLowerCase().includes(q)
+        !r.identifier.toLowerCase().includes(q) &&
+        !inputName.includes(q) &&
+        !parent.includes(q) &&
+        !repo.includes(q)
       )
         return false
     }
@@ -358,10 +654,29 @@ export default function RecipesPage() {
   const hasFilters = search || enabled
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col gap-4">
+    <div className="flex h-[calc(100vh-3rem)] min-w-0 w-full max-w-full flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Recipe Management</h1>
+        <h1
+          className={cn(
+            'text-3xl font-bold text-pretty',
+            munkiAccents.autopkg.pageTitle,
+          )}
+        >
+          Recipe Management
+        </h1>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            disabled={triggerRunMutation.isPending}
+            onClick={() => setQuickRunTarget('all')}
+          >
+            {pendingRunAll ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
+            Run all
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -369,68 +684,90 @@ export default function RecipesPage() {
             onClick={() => verifyAllMutation.mutate()}
           >
             {verifyAllMutation.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <ShieldCheck className="mr-2 h-4 w-4" />
+              <ShieldCheck className="h-4 w-4" />
             )}
-            Verify All Trust
+            Verify All
           </Button>
           <Button variant="outline" asChild>
             <Link href="/autopkg/discover">
-              <Compass className="mr-2 h-4 w-4" />
-              Discover Munki Recipes
+              <Compass className="h-4 w-4" />
+              Discover
             </Link>
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setImportOpen(true)}
+          >
+            <FileUp className="h-4 w-4" />
+            Import
+          </Button>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search recipes..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value || null)}
-            className="pl-9"
+      <div className="flex w-full flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <div className="relative max-w-sm flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search recipes..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value || null)}
+              className="pl-9"
+            />
+          </div>
+
+          <Select
+            value={enabled || '_all'}
+            onValueChange={(v) => setEnabled(v === '_all' ? null : v)}
+          >
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All</SelectItem>
+              <SelectItem value="true">Enabled</SelectItem>
+              <SelectItem value="false">Disabled</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Clear filters"
+              onClick={() => {
+                setSearch(null)
+                setEnabled(null)
+              }}
+            >
+              <X className="mr-1 h-4 w-4" />
+              Clear
+            </Button>
+          )}
+        </div>
+
+        <div className="ml-auto shrink-0">
+          <ColumnVisibilityMenu
+            columns={columns}
+            columnVisibility={columnVisibility}
+            onColumnVisibilityChange={setColumnVisibility}
           />
         </div>
-
-        <Select
-          value={enabled || '_all'}
-          onValueChange={(v) => setEnabled(v === '_all' ? null : v)}
-        >
-          <SelectTrigger className="w-[140px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All</SelectItem>
-            <SelectItem value="true">Enabled</SelectItem>
-            <SelectItem value="false">Disabled</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {hasFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Clear filters"
-            onClick={() => {
-              setSearch(null)
-              setEnabled(null)
-            }}
-          >
-            <X className="mr-1 h-4 w-4" />
-            Clear
-          </Button>
-        )}
       </div>
 
-      <div className="flex-1 min-h-0">
+      <div className="min-h-0 min-w-0 flex-1">
         <DataTable
           columns={columns}
           data={filtered}
           total={filtered.length}
           isLoading={isLoading}
+          defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
+          columnVisibility={columnVisibility}
+          onColumnVisibilityChange={setColumnVisibility}
+          hideColumnPicker
         />
       </div>
 
@@ -452,6 +789,145 @@ export default function RecipesPage() {
           }}
         />
       )}
+
+      <QuickRunDialog
+        open={quickRunTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setQuickRunTarget(null)
+        }}
+        recipe={quickRunTarget === 'all' ? null : quickRunTarget}
+        isPending={triggerRunMutation.isPending}
+        onConfirm={(runner) => {
+          const names =
+            quickRunTarget === 'all' || quickRunTarget === null
+              ? null
+              : [quickRunTarget.name]
+          triggerRunMutation.mutate({ recipeNames: names, runner })
+        }}
+      />
+
+      <Dialog
+        open={importOpen}
+        onOpenChange={(open) => {
+          setImportOpen(open)
+          if (!open) {
+            setImportContent('')
+            setImportName('')
+            setImportSourceRepo('')
+            setImportRefreshTrust(true)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[1200px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import existing override</DialogTitle>
+            <DialogDescription>
+              Paste XML plist text, YAML, JSON, or base64-encoded binary plist
+              from your AutoPkg recipe repo or{' '}
+              <span className="font-mono">
+                ~/Library/AutoPkg/RecipeOverrides
+              </span>
+              . Identifier must not already exist in Automunki.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="import-override-file">File (optional)</Label>
+              <Input
+                id="import-override-file"
+                type="file"
+                accept=".plist,.recipe,.yaml,.yml,text/plain,application/octet-stream"
+                className="cursor-pointer"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0]
+                  e.target.value = ''
+                  if (!f) return
+                  try {
+                    const text = await fileToImportOverrideContent(f)
+                    setImportContent(text)
+                    toast.success(`Loaded ${f.name}`)
+                  } catch {
+                    toast.error('Could not read file')
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="import-override-content">Override content</Label>
+              <Textarea
+                id="import-override-content"
+                value={importContent}
+                onChange={(e) => setImportContent(e.target.value)}
+                placeholder="<?xml version=&quot;1.0&quot;… or base64 bplist…"
+                rows={12}
+                className="font-mono text-xs min-h-[200px]"
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="import-name">Display name (optional)</Label>
+                <Input
+                  id="import-name"
+                  value={importName}
+                  onChange={(e) => setImportName(e.target.value)}
+                  placeholder="Defaults to last segment of Identifier"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="import-repo">Source repo (optional)</Label>
+                <Input
+                  id="import-repo"
+                  value={importSourceRepo}
+                  onChange={(e) => setImportSourceRepo(e.target.value)}
+                  placeholder="owner/repo"
+                  className="font-mono text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-md border px-3 py-2">
+              <Switch
+                id="import-refresh-trust"
+                checked={importRefreshTrust}
+                onCheckedChange={setImportRefreshTrust}
+              />
+              <Label htmlFor="import-refresh-trust" className="cursor-pointer">
+                Resolve trust from GitHub
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              When enabled, parent recipes are hashed via the GitHub API and
+              trust is marked verified. Turn off to import only the plist (trust
+              stays unknown; use &quot;Re-fetch Trust&quot; in the recipe editor
+              later).
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                !importContent.trim() || importOverrideMutation.isPending
+              }
+              onClick={() =>
+                importOverrideMutation.mutate({
+                  content: importContent,
+                  name: importName || null,
+                  source_repo_full_name: importSourceRepo || null,
+                  refresh_trust: importRefreshTrust,
+                })
+              }
+            >
+              {importOverrideMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileUp className="mr-2 h-4 w-4" />
+              )}
+              Import
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!deletingRecipe}
@@ -727,7 +1203,6 @@ const PKGINFO_TEXT_FIELDS = [
   { key: 'developer', label: 'Developer', multiline: false },
   { key: 'name', label: 'Package Name', multiline: false },
   { key: 'category', label: 'Category', multiline: false },
-  { key: 'icon_name', label: 'Icon Name', multiline: false },
   { key: 'minimum_os_version', label: 'Minimum OS Version', multiline: false },
   { key: 'maximum_os_version', label: 'Maximum OS Version', multiline: false },
   { key: 'uninstall_method', label: 'Uninstall Method', multiline: false },
@@ -772,6 +1247,8 @@ function RecipeEditDialog({
   onDeleted: () => void
 }) {
   const inputVarsRaw = recipe.input_variables as Record<string, unknown> | null
+  const canonicalInput = recipeInputDict(recipe) ?? inputVarsRaw ?? {}
+  const hasStoredOverridePlist = Boolean(recipe.override_data)
 
   const [identifier, setIdentifier] = useState(recipe.identifier)
   const [name, setName] = useState(recipe.name)
@@ -784,12 +1261,13 @@ function RecipeEditDialog({
   const [autoPromote, setAutoPromote] = useState(recipe.auto_promote)
 
   const [nonPkginfoEntries, setNonPkginfoEntries] = useState<KVEntry[]>(
-    kvFromDict(extractNonPkginfoInput(inputVarsRaw)),
+    kvFromDict(extractNonPkginfoInput(canonicalInput)),
   )
 
-  const initialPkginfo = extractPkginfo(inputVarsRaw)
+  const initialPkginfo = extractPkginfo(canonicalInput)
   const [pkginfo, setPkginfo] =
     useState<Record<string, unknown>>(initialPkginfo)
+  const [iconRevision, setIconRevision] = useState(0)
 
   const updatePkgField = (key: string, value: unknown) => {
     setPkginfo((prev) => ({ ...prev, [key]: value }))
@@ -834,7 +1312,7 @@ function RecipeEditDialog({
   const handleSave = () => {
     const nonPkgDict = kvToDict(nonPkginfoEntries)
     const hasPkginfo = Object.keys(pkginfo).length > 0
-    const mergedInput: Record<string, unknown> = {
+    const fullInput: Record<string, unknown> = {
       ...nonPkgDict,
       ...(hasPkginfo ? { pkginfo } : {}),
     }
@@ -847,7 +1325,22 @@ function RecipeEditDialog({
       is_enabled: isEnabled,
       is_override: isOverride,
       auto_promote: autoPromote,
-      input_variables: Object.keys(mergedInput).length > 0 ? mergedInput : null,
+    }
+
+    if (hasStoredOverridePlist) {
+      const prev =
+        (recipe.override_data as Record<string, unknown> | null) ?? {}
+      payload.override_data = {
+        ...prev,
+        Identifier: identifier,
+        ParentRecipe: parentRecipe || '',
+        Input: fullInput,
+      }
+      payload.input_variables =
+        Object.keys(nonPkgDict).length > 0 ? nonPkgDict : null
+    } else {
+      payload.input_variables =
+        Object.keys(fullInput).length > 0 ? fullInput : null
     }
 
     saveMutation.mutate(payload)
@@ -1013,14 +1506,55 @@ function RecipeEditDialog({
                     : ''
                 }
                 onChange={(e) => {
-                  const next = e.target.value
-                    .split(',')
-                    .map((s) => s.trim())
-                    .filter(Boolean)
+                  const next = parseCatalogListInput(e.target.value)
                   updatePkgField('catalogs', next.length > 0 ? next : undefined)
                 }}
-                placeholder="testing, production"
+                placeholder="testing, dev, staging or testing/dev/staging"
               />
+            </div>
+
+            <div className="space-y-2 rounded-md border p-4">
+              <Label>Software icon</Label>
+              <p className="text-xs text-muted-foreground">
+                PNG for the web UI (same folder as static{' '}
+                <span className="font-mono">/icons/*.png</span>). Uses Icon Name
+                from pkginfo if set, otherwise Package Name.
+              </p>
+              <div className="flex flex-wrap items-center gap-4">
+                <SoftwareIcon
+                  name={
+                    typeof pkginfo.name === 'string' && pkginfo.name
+                      ? pkginfo.name
+                      : 'package'
+                  }
+                  displayName={
+                    typeof pkginfo.display_name === 'string'
+                      ? pkginfo.display_name
+                      : null
+                  }
+                  iconName={
+                    typeof pkginfo.icon_name === 'string'
+                      ? pkginfo.icon_name
+                      : null
+                  }
+                  size="md"
+                  cacheRevision={iconRevision}
+                />
+                <PkginfoIconUpload
+                  suggestedBasename={
+                    typeof pkginfo.name === 'string' ? pkginfo.name : ''
+                  }
+                  currentIconName={
+                    typeof pkginfo.icon_name === 'string'
+                      ? pkginfo.icon_name
+                      : ''
+                  }
+                  onIconNameApplied={(v) => {
+                    updatePkgField('icon_name', v)
+                    setIconRevision((r) => r + 1)
+                  }}
+                />
+              </div>
             </div>
           </TabsContent>
 
@@ -1046,6 +1580,7 @@ function RecipeEditDialog({
               pkginfo={pkginfo}
               onUpdate={updatePkgField}
               catalogNames={catalogNames}
+              onIconFileUploaded={() => setIconRevision((r) => r + 1)}
             />
           </TabsContent>
 
@@ -1118,10 +1653,12 @@ function PkginfoEditor({
   pkginfo,
   onUpdate,
   catalogNames,
+  onIconFileUploaded,
 }: {
   pkginfo: Record<string, unknown>
   onUpdate: (key: string, value: unknown) => void
   catalogNames: string[]
+  onIconFileUploaded?: () => void
 }) {
   const getString = (key: string) => (pkginfo[key] as string) ?? ''
   const getBool = (key: string) => (pkginfo[key] as boolean) ?? false
@@ -1131,29 +1668,60 @@ function PkginfoEditor({
     <div className="space-y-6">
       <div className="space-y-4">
         {PKGINFO_TEXT_FIELDS.map((field) => (
-          <div key={field.key} className="space-y-2">
-            <Label htmlFor={`pkg-${field.key}`}>{field.label}</Label>
-            {field.multiline ? (
-              <Textarea
-                id={`pkg-${field.key}`}
-                value={getString(field.key)}
-                onChange={(e) =>
-                  onUpdate(field.key, e.target.value || undefined)
-                }
-                rows={3}
-                className="text-sm"
-              />
-            ) : (
-              <Input
-                id={`pkg-${field.key}`}
-                value={getString(field.key)}
-                onChange={(e) =>
-                  onUpdate(field.key, e.target.value || undefined)
-                }
-                className="text-sm"
-              />
+          <Fragment key={field.key}>
+            <div className="space-y-2">
+              <Label htmlFor={`pkg-${field.key}`}>{field.label}</Label>
+              {field.multiline ? (
+                <Textarea
+                  id={`pkg-${field.key}`}
+                  value={getString(field.key)}
+                  onChange={(e) =>
+                    onUpdate(field.key, e.target.value || undefined)
+                  }
+                  rows={3}
+                  className="text-sm"
+                />
+              ) : (
+                <Input
+                  id={`pkg-${field.key}`}
+                  value={getString(field.key)}
+                  onChange={(e) =>
+                    onUpdate(field.key, e.target.value || undefined)
+                  }
+                  className="text-sm"
+                />
+              )}
+            </div>
+            {field.key === 'name' && (
+              <div className="space-y-2">
+                <Label htmlFor="pkg-icon_name">Icon Name</Label>
+                <p className="text-xs text-muted-foreground">
+                  Filename stem without .png (Munki pkginfo).
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    id="pkg-icon_name"
+                    value={getString('icon_name')}
+                    onChange={(e) =>
+                      onUpdate('icon_name', e.target.value || undefined)
+                    }
+                    className="max-w-md text-sm"
+                    placeholder={
+                      getString('name') || 'defaults to package name for upload'
+                    }
+                  />
+                  <PkginfoIconUpload
+                    suggestedBasename={getString('name')}
+                    currentIconName={getString('icon_name')}
+                    onIconNameApplied={(v) => {
+                      onUpdate('icon_name', v)
+                      onIconFileUploaded?.()
+                    }}
+                  />
+                </div>
+              </div>
             )}
-          </div>
+          </Fragment>
         ))}
       </div>
 
@@ -1206,13 +1774,14 @@ function PkginfoEditor({
             <Input
               value={values.join(', ')}
               onChange={(e) => {
-                const next = e.target.value
-                  .split(',')
-                  .map((s) => s.trim())
-                  .filter(Boolean)
+                const next = parseCatalogListInput(e.target.value)
                 onUpdate(field.key, next.length > 0 ? next : undefined)
               }}
-              placeholder={`Comma-separated ${field.label.toLowerCase()}`}
+              placeholder={
+                isThisCatalogs
+                  ? 'Comma, slash, or pipe — e.g. testing, dev, staging'
+                  : `Comma-separated ${field.label.toLowerCase()}`
+              }
               className="text-sm"
             />
           </div>

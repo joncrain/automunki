@@ -1,10 +1,11 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, Pencil, Plus, Trash2 } from 'lucide-react'
+import { FolderOpen, Plus, Trash2 } from 'lucide-react'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { CatalogSoftwareAvatarCircles } from '@/components/software-avatar-circles'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { api, type CatalogRead, type PkgInfoSummary } from '@/lib/api'
 import { formatDate } from '@/lib/format'
@@ -32,10 +34,6 @@ export default function CatalogsPage() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [isProduction, setIsProduction] = useState(false)
-
-  const [editCatalog, setEditCatalog] = useState<CatalogRead | null>(null)
-  const [editDescription, setEditDescription] = useState('')
-  const [editIsProduction, setEditIsProduction] = useState(false)
 
   const [deleteCatalog, setDeleteCatalog] = useState<CatalogRead | null>(null)
   const [viewCatalog, setViewCatalog] = useState<CatalogRead | null>(null)
@@ -58,23 +56,6 @@ export default function CatalogsPage() {
       resetCreateForm()
     },
     onError: (err: Error) => toast.error(`Failed to create: ${err.message}`),
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({
-      id,
-      ...payload
-    }: {
-      id: string
-      description?: string
-      is_production?: boolean
-    }) => api.put<CatalogRead>(`/catalogs/${id}`, payload),
-    onSuccess: (updated) => {
-      toast.success(`Catalog "${updated.name}" updated`)
-      queryClient.invalidateQueries({ queryKey: ['catalogs'] })
-      setEditCatalog(null)
-    },
-    onError: (err: Error) => toast.error(`Failed to update: ${err.message}`),
   })
 
   const deleteMutation = useMutation({
@@ -100,21 +81,6 @@ export default function CatalogsPage() {
       name: trimmed,
       description: description.trim() || undefined,
       is_production: isProduction,
-    })
-  }
-
-  const openEdit = (catalog: CatalogRead) => {
-    setEditCatalog(catalog)
-    setEditDescription(catalog.description ?? '')
-    setEditIsProduction(catalog.is_production)
-  }
-
-  const handleUpdate = () => {
-    if (!editCatalog) return
-    updateMutation.mutate({
-      id: editCatalog.id,
-      description: editDescription.trim() || undefined,
-      is_production: editIsProduction,
     })
   }
 
@@ -206,55 +172,6 @@ export default function CatalogsPage() {
         </Dialog>
       </div>
 
-      {/* Edit Dialog */}
-      <Dialog
-        open={!!editCatalog}
-        onOpenChange={(v) => {
-          if (!v) setEditCatalog(null)
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Catalog: {editCatalog?.name}</DialogTitle>
-            <DialogDescription>
-              Update catalog settings. The name cannot be changed.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-catalog-description">Description</Label>
-              <Input
-                id="edit-catalog-description"
-                placeholder="e.g. Production software catalog"
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleUpdate()
-                }}
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <Switch
-                id="edit-catalog-production"
-                checked={editIsProduction}
-                onCheckedChange={setEditIsProduction}
-              />
-              <Label htmlFor="edit-catalog-production">
-                Production catalog
-              </Label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditCatalog(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpdate} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? 'Saving...' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Delete Confirmation Dialog */}
       <Dialog
         open={!!deleteCatalog}
@@ -293,11 +210,11 @@ export default function CatalogsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* View Items Dialog */}
       {viewCatalog && (
-        <CatalogItemsDialog
+        <CatalogDetailDialog
           catalog={viewCatalog}
           onClose={() => setViewCatalog(null)}
+          onUpdated={setViewCatalog}
         />
       )}
 
@@ -323,18 +240,6 @@ export default function CatalogsPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
-                  aria-label={`Edit ${catalog.name}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openEdit(catalog)
-                  }}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-destructive"
                   aria-label={`Delete ${catalog.name}`}
                   onClick={(e) => {
@@ -347,13 +252,24 @@ export default function CatalogsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <p
-                className="text-2xl font-bold"
-                style={{ fontVariantNumeric: 'tabular-nums' }}
-              >
-                {catalog.item_count}
-              </p>
-              <p className="text-sm text-muted-foreground">software titles</p>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p
+                    className="text-2xl font-bold"
+                    style={{ fontVariantNumeric: 'tabular-nums' }}
+                  >
+                    {catalog.item_count}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    software titles
+                  </p>
+                </div>
+                <CatalogSoftwareAvatarCircles
+                  catalogName={catalog.name}
+                  itemCount={catalog.item_count}
+                  className="shrink-0"
+                />
+              </div>
               {catalog.description && (
                 <p className="mt-2 text-sm">{catalog.description}</p>
               )}
@@ -377,75 +293,164 @@ export default function CatalogsPage() {
   )
 }
 
-function CatalogItemsDialog({
+function CatalogDetailDialog({
   catalog,
   onClose,
+  onUpdated,
 }: {
   catalog: CatalogRead
   onClose: () => void
+  onUpdated: (c: CatalogRead) => void
 }) {
+  const queryClient = useQueryClient()
+  const [editDescription, setEditDescription] = useState(
+    catalog.description ?? '',
+  )
+  const [editIsProduction, setEditIsProduction] = useState(
+    catalog.is_production,
+  )
+
+  useEffect(() => {
+    setEditDescription(catalog.description ?? '')
+    setEditIsProduction(catalog.is_production)
+  }, [catalog.id, catalog.description, catalog.is_production])
+
   const { data: items, isLoading } = useQuery({
     queryKey: ['catalog-items', catalog.id],
     queryFn: () => api.get<PkgInfoSummary[]>(`/catalogs/${catalog.id}/items`),
   })
 
+  const updateMutation = useMutation({
+    mutationFn: ({
+      id,
+      ...payload
+    }: {
+      id: string
+      description?: string
+      is_production?: boolean
+    }) => api.put<CatalogRead>(`/catalogs/${id}`, payload),
+    onSuccess: (updated) => {
+      toast.success(`Catalog "${updated.name}" updated`)
+      queryClient.invalidateQueries({ queryKey: ['catalogs'] })
+      onUpdated(updated)
+    },
+    onError: (err: Error) => toast.error(`Failed to update: ${err.message}`),
+  })
+
+  const trimmedDesc = editDescription.trim()
+  const catalogDesc = (catalog.description ?? '').trim()
+  const isDirty =
+    trimmedDesc !== catalogDesc || editIsProduction !== catalog.is_production
+
+  const handleSave = () => {
+    updateMutation.mutate({
+      id: catalog.id,
+      description: trimmedDesc || undefined,
+      is_production: editIsProduction,
+    })
+  }
+
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[80vh] sm:max-w-2xl">
+      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex flex-wrap items-center gap-2">
             <FolderOpen className={cn('h-5 w-5', munkiAccents.catalogs.icon)} />
             {catalog.name}
-            {catalog.is_production && (
-              <Badge variant="default" className="ml-2">
+            {editIsProduction && (
+              <Badge variant="default" className="shrink-0">
                 Production
               </Badge>
             )}
           </DialogTitle>
           <DialogDescription>
             {catalog.item_count} software title
-            {catalog.item_count !== 1 ? 's' : ''} in this catalog
+            {catalog.item_count !== 1 ? 's' : ''} in this catalog. The catalog
+            name cannot be changed.
           </DialogDescription>
         </DialogHeader>
-        <div className="max-h-[55vh] overflow-y-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground">
-              Loading…
-            </div>
-          ) : items?.length ? (
-            <div className="divide-y">
-              {items.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/software/${item.id}`}
-                  className="flex items-center gap-3 px-2 py-2.5 transition-colors hover:bg-accent/50 rounded-md"
-                >
-                  <SoftwareIcon
-                    name={item.name}
-                    displayName={item.display_name}
-                    size="sm"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-sm">
-                      {item.display_name || item.name}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {item.name} — {item.version}
-                    </p>
-                  </div>
-                  {item.category && (
-                    <Badge variant="outline" className="shrink-0 text-xs">
-                      {item.category}
-                    </Badge>
-                  )}
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No software titles in this catalog.
-            </p>
-          )}
+
+        <div className="grid shrink-0 gap-4 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor="catalog-detail-description">Description</Label>
+            <Input
+              id="catalog-detail-description"
+              placeholder="e.g. Production software catalog"
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && isDirty && !updateMutation.isPending) {
+                  e.preventDefault()
+                  handleSave()
+                }
+              }}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="catalog-detail-production"
+              checked={editIsProduction}
+              onCheckedChange={setEditIsProduction}
+            />
+            <Label htmlFor="catalog-detail-production">
+              Production catalog
+            </Label>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={handleSave}
+              disabled={!isDirty || updateMutation.isPending}
+            >
+              {updateMutation.isPending ? 'Saving…' : 'Save changes'}
+            </Button>
+          </div>
+        </div>
+
+        <Separator className="shrink-0" />
+
+        <div className="min-h-0 flex-1 overflow-hidden pt-4">
+          <p className="mb-2 text-sm font-medium">Software in this catalog</p>
+          <div className="max-h-[min(42vh,24rem)] overflow-y-auto rounded-md border">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8 text-muted-foreground">
+                Loading…
+              </div>
+            ) : items?.length ? (
+              <div className="divide-y">
+                {items.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={`/software/${item.id}`}
+                    className="flex items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-accent/50"
+                  >
+                    <SoftwareIcon
+                      name={item.name}
+                      displayName={item.display_name}
+                      size="sm"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-sm">
+                        {item.display_name || item.name}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {item.name} — {item.version}
+                      </p>
+                    </div>
+                    {item.category && (
+                      <Badge variant="outline" className="shrink-0 text-xs">
+                        {item.category}
+                      </Badge>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No software titles in this catalog.
+              </p>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

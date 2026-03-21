@@ -169,6 +169,8 @@ class AutoPkgRun(UUIDMixin, Base):
         nullable=False,
     )
     triggered_by: Mapped[str | None] = mapped_column(Text)
+    # github = GitHub Actions; local = Mac runner (see docs/local-autopkg-runner.md)
+    runner_type: Mapped[str] = mapped_column(Text, nullable=False, default="github", server_default="github")
     github_run_id: Mapped[str | None] = mapped_column(Text)
     github_run_url: Mapped[str | None] = mapped_column(Text)
 

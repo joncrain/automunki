@@ -1,12 +1,18 @@
+import base64
+import json
+import plistlib
+import re
 import uuid
 from datetime import UTC, datetime
 
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from automunki.api.deps import get_session
+from automunki.core.config import settings
 from automunki.core.security import current_optional_user
 from automunki.models.autopkg import (
     ApprovalStatus,
@@ -27,6 +33,7 @@ from automunki.models.user import User
 from automunki.schemas.autopkg import (
     ApprovalRequest,
     AutoPkgRecipeCreate,
+    AutoPkgRecipeImportOverrideRequest,
     AutoPkgRecipeRead,
     AutoPkgRecipeUpdate,
     AutoPkgRunRead,
@@ -62,7 +69,9 @@ from automunki.services.trust import (
     compute_trust_info,
     fetch_recipe_content,
     infer_repos_from_trust_info,
+    merge_db_trust_into_plist_for_runner,
     resolve_introducing_commit,
+    trust_info_from_plist_parent_recipe_trust,
     verify_trust,
 )
 
@@ -70,6 +79,95 @@ from automunki.services.trust import (
 TRUST_STATUS_BLOCKS_RUN = frozenset(
     {TrustStatus.failed.value, TrustStatus.pending_approval.value},
 )
+
+
+def _strip_pkginfo_from_input(input_dict: dict | None) -> dict | None:
+    """Return a copy of Input without ``pkginfo`` (canonical pkginfo lives in override plist only)."""
+    if not input_dict or "pkginfo" not in input_dict:
+        return input_dict
+    rest = {k: v for k, v in input_dict.items() if k != "pkginfo"}
+    return rest if rest else None
+
+
+def _normalize_pkginfo_into_override_only(recipe: AutoPkgRecipe) -> None:
+    """
+    When ``override_data`` is set, ``pkginfo`` must live only under ``override_data.Input``,
+    not duplicated in ``input_variables``.
+    """
+    if not recipe.override_data:
+        return
+    iv = recipe.input_variables
+    if not isinstance(iv, dict) or "pkginfo" not in iv:
+        return
+    pkg = iv["pkginfo"]
+    rest = {k: v for k, v in iv.items() if k != "pkginfo"}
+    recipe.input_variables = rest if rest else None
+    od = dict(recipe.override_data)
+    inp = dict(od.get("Input") or {})
+    inp["pkginfo"] = pkg
+    od["Input"] = inp
+    recipe.override_data = od
+
+
+def _plist_trust_snippet_from_db_trust(trust_info: dict) -> dict:
+    """Build ``ParentRecipeTrustInfo`` plist-shaped dict from canonical DB ``trust_info``."""
+    plist_trust: dict = {
+        "parent_recipes": {},
+        "non_core_processors": {},
+    }
+    if trust_info.get("parent_recipes"):
+        plist_trust["parent_recipes"] = {
+            k: {"git_hash": "", "sha256_hash": v.get("sha256_hash", "")}
+            for k, v in trust_info["parent_recipes"].items()
+        }
+    if trust_info.get("non_core_processors"):
+        plist_trust["non_core_processors"] = {
+            k: {"git_hash": "", "sha256_hash": v.get("sha256_hash", "")}
+            for k, v in trust_info["non_core_processors"].items()
+        }
+    return plist_trust
+
+
+def _parse_imported_override_content(raw: str) -> dict:
+    """
+    Parse an override from XML/binary plist, base64 binary plist, JSON object, or YAML.
+    """
+    s = raw.strip()
+    if not s:
+        raise HTTPException(status_code=400, detail="Empty content")
+
+    if s.startswith("{"):
+        try:
+            d = json.loads(s)
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from e
+        if not isinstance(d, dict):
+            raise HTTPException(status_code=400, detail="JSON must be an object")
+        return d
+
+    try:
+        return plistlib.loads(s.encode("utf-8"))
+    except Exception:
+        pass
+
+    try:
+        b = base64.b64decode(s, validate=True)
+        return plistlib.loads(b)
+    except Exception:
+        pass
+
+    try:
+        y = yaml.safe_load(s)
+    except yaml.YAMLError:
+        y = None
+    if isinstance(y, dict):
+        return y
+
+    raise HTTPException(
+        status_code=400,
+        detail="Could not parse override (try XML plist, base64 binary plist, JSON object, or YAML)",
+    )
+
 
 router = APIRouter(prefix="/autopkg", tags=["autopkg"])
 
@@ -98,23 +196,34 @@ async def trigger_run(
                 detail=(f"Cannot run recipes while trust is failed or pending approval: {', '.join(blocked)}"),
             )
 
+    resolved_runner = data.runner if data.runner is not None else settings.autopkg_runner_mode
+    if resolved_runner not in ("github", "local"):
+        resolved_runner = "github"
+
     run = AutoPkgRun(
         status=RunStatus.pending,
         trigger_type=RunTriggerType.manual_ui,
         triggered_by=user.email if user else "anonymous",
         recipe_filter=data.recipe_names,
+        runner_type=resolved_runner,
     )
     session.add(run)
     await session.flush()
 
-    result = await dispatch_autopkg_workflow(
-        run_id=str(run.id),
-        recipe_names=data.recipe_names,
-    )
+    if resolved_runner == "local":
+        result: dict = {"status": "local_pending"}
+    else:
+        result = await dispatch_autopkg_workflow(
+            run_id=str(run.id),
+            recipe_names=data.recipe_names,
+        )
 
     if "error" in result:
         run.status = RunStatus.failed
         run.error_message = result["error"]
+    elif result.get("status") == "local_pending":
+        run.status = RunStatus.pending
+        run.error_message = None
     else:
         run.status = RunStatus.running
         run.started_at = datetime.now(UTC)
@@ -198,6 +307,15 @@ async def get_run_config(
             trust.setdefault("non_core_processors", {})
             if trust:
                 plist["ParentRecipeTrustInfo"] = trust
+            # override plist may list only the immediate parent; DB trust_info has full chain
+            merge_db_trust_into_plist_for_runner(plist, recipe.trust_info)
+            # Legacy rows: pkginfo was duplicated in input_variables; prefer override Input if present
+            iv = recipe.input_variables or {}
+            inp = plist.get("Input")
+            plist_input = dict(inp) if isinstance(inp, dict) else {}
+            if "pkginfo" not in plist_input and isinstance(iv, dict) and iv.get("pkginfo") is not None:
+                plist_input["pkginfo"] = iv["pkginfo"]
+                plist["Input"] = plist_input
             override_entry["plist"] = plist
         else:
             override_entry["plist"] = {
@@ -282,8 +400,20 @@ async def post_run_result(
         duration_seconds=data.duration_seconds,
     )
 
-    recipe = await session.execute(select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == data.recipe_identifier))
-    recipe_obj = recipe.scalar_one_or_none()
+    recipe_obj = (
+        await session.execute(select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == data.recipe_identifier))
+    ).scalar_one_or_none()
+
+    # Match DB row when report script sent a mismatched identifier (e.g. filename heuristics).
+    if recipe_obj is None and data.recipe_name:
+        name_key = data.recipe_name.strip().lower()
+        alt = (
+            (await session.execute(select(AutoPkgRecipe).where(func.lower(AutoPkgRecipe.name) == name_key)))
+            .scalars()
+            .all()
+        )
+        if len(alt) == 1:
+            recipe_obj = alt[0]
 
     if recipe_obj:
         recipe_obj.last_run_at = datetime.now(UTC)
@@ -355,6 +485,7 @@ async def create_recipe(
         raise HTTPException(status_code=409, detail="Recipe already exists")
 
     recipe = AutoPkgRecipe(**data.model_dump(exclude={"github_repo", "recipe_path"}))
+    _normalize_pkginfo_into_override_only(recipe)
     session.add(recipe)
 
     await create_audit_entry(
@@ -365,6 +496,121 @@ async def create_recipe(
         entity_name=recipe.name,
         user_id=user.id if user else None,
         user_email=user.email if user else None,
+    )
+
+    await session.commit()
+    await session.refresh(recipe)
+    return AutoPkgRecipeRead.model_validate(recipe)
+
+
+@router.post("/recipes/import-override", response_model=AutoPkgRecipeRead)
+async def import_recipe_override(
+    data: AutoPkgRecipeImportOverrideRequest,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    """
+    Import an existing AutoPkg override plist (from ``RecipeOverrides`` or a repo)
+    into ``autopkg_recipe``. Optionally re-resolve trust from GitHub.
+    """
+    parsed = _parse_imported_override_content(data.content)
+    identifier = parsed.get("Identifier")
+    parent_recipe = parsed.get("ParentRecipe")
+    if not identifier or not isinstance(identifier, str):
+        raise HTTPException(status_code=400, detail="Override must include a string Identifier")
+    if not parent_recipe or not isinstance(parent_recipe, str):
+        raise HTTPException(
+            status_code=400,
+            detail="Override must include a string ParentRecipe (this must be an override, not a full recipe)",
+        )
+
+    existing = await session.execute(select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == identifier))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="A recipe with this identifier already exists")
+
+    input_dict = dict(parsed.get("Input") or {})
+    input_variables_for_db = _strip_pkginfo_from_input(input_dict if input_dict else None)
+
+    name = (data.name or "").strip() or identifier.rsplit(".", 1)[-1]
+
+    source_repo: str | None = None
+    if data.source_repo_full_name and str(data.source_repo_full_name).strip():
+        try:
+            source_repo = normalize_github_full_name(str(data.source_repo_full_name))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    override_plist: dict = {
+        "Identifier": identifier,
+        "ParentRecipe": parent_recipe,
+        "Input": input_dict,
+    }
+    for key in ("MinimumVersion", "Process"):
+        if key in parsed:
+            override_plist[key] = parsed[key]
+    if isinstance(parsed.get("ParentRecipeTrustInfo"), dict):
+        override_plist["ParentRecipeTrustInfo"] = parsed["ParentRecipeTrustInfo"]
+
+    plist_trust_raw = parsed.get("ParentRecipeTrustInfo")
+    trust_from_plist = (
+        trust_info_from_plist_parent_recipe_trust(plist_trust_raw) if isinstance(plist_trust_raw, dict) else None
+    )
+
+    trust_info: dict | None = None
+    trust_status = TrustStatus.unknown.value
+    trust_verified_at = None
+
+    if data.refresh_trust:
+        location_cache = await build_location_cache(session)
+        try:
+            new_trust = await compute_trust_info(
+                parent_recipe,
+                existing_trust_info=trust_from_plist,
+                location_cache=location_cache,
+            )
+        except GitHubRateLimitError:
+            raise HTTPException(
+                status_code=503,
+                detail="GitHub API rate limit exceeded. Try again later or import with refresh_trust=false.",
+            ) from None
+        if new_trust.get("parent_recipes"):
+            trust_info = new_trust
+            trust_status = TrustStatus.verified.value
+            trust_verified_at = datetime.now(UTC)
+            override_plist["ParentRecipeTrustInfo"] = _plist_trust_snippet_from_db_trust(new_trust)
+        elif trust_from_plist and (
+            trust_from_plist.get("parent_recipes") or trust_from_plist.get("non_core_processors")
+        ):
+            trust_info = trust_from_plist
+    elif trust_from_plist and (trust_from_plist.get("parent_recipes") or trust_from_plist.get("non_core_processors")):
+        trust_info = trust_from_plist
+
+    recipe = AutoPkgRecipe(
+        identifier=identifier,
+        name=name,
+        parent_recipe=parent_recipe,
+        source_repo_full_name=source_repo,
+        override_data=override_plist,
+        trust_info=trust_info,
+        input_variables=input_variables_for_db,
+        is_override=True,
+        is_enabled=data.is_enabled,
+        auto_promote=data.auto_promote,
+        trust_status=trust_status,
+        trust_verified_at=trust_verified_at,
+    )
+    _normalize_pkginfo_into_override_only(recipe)
+    session.add(recipe)
+
+    await create_audit_entry(
+        session,
+        action="import_override",
+        entity_type="autopkg_recipe",
+        entity_id=str(recipe.id),
+        entity_name=recipe.name,
+        user_id=user.id if user else None,
+        user_email=user.email if user else None,
+        after_snapshot={"identifier": identifier, "refresh_trust": data.refresh_trust},
     )
 
     await session.commit()
@@ -386,6 +632,8 @@ async def update_recipe(
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(recipe, field, value)
+
+    _normalize_pkginfo_into_override_only(recipe)
 
     await create_audit_entry(
         session,
@@ -991,33 +1239,20 @@ async def add_recipe_override(
 
     trust_info = override_info.get("trust_info", {})
     input_variables = override_info.get("input_variables", {})
+    input_variables_for_db = _strip_pkginfo_from_input(input_variables if input_variables else None)
 
     override_plist = {
         "Identifier": override_info["identifier"],
         "ParentRecipe": override_info["parent_recipe"],
         "Input": input_variables or {},
     }
-    plist_trust: dict = {
-        "parent_recipes": {},
-        "non_core_processors": {},
-    }
-    if trust_info.get("parent_recipes"):
-        plist_trust["parent_recipes"] = {
-            k: {"git_hash": "", "sha256_hash": v.get("sha256_hash", "")}
-            for k, v in trust_info["parent_recipes"].items()
-        }
-    if trust_info.get("non_core_processors"):
-        plist_trust["non_core_processors"] = {
-            k: {"git_hash": "", "sha256_hash": v.get("sha256_hash", "")}
-            for k, v in trust_info["non_core_processors"].items()
-        }
-    override_plist["ParentRecipeTrustInfo"] = plist_trust
+    override_plist["ParentRecipeTrustInfo"] = _plist_trust_snippet_from_db_trust(trust_info)
 
     payload = {
         "identifier": override_info["identifier"],
         "name": data.name,
         "parent_recipe": override_info["parent_recipe"],
-        "input_variables": input_variables,
+        "input_variables": input_variables_for_db,
         "trust_info": trust_info,
         "override_data": override_plist,
         "source_repo_full_name": data.github_repo,
@@ -1168,6 +1403,41 @@ async def put_metadata_cache(
     return MetadataCacheRead(cache_data=data.cache_data, updated_at=now)
 
 
+@router.delete("/metadata-cache")
+async def delete_metadata_cache(
+    recipe_key: str | None = Query(
+        None,
+        description="If set, delete only this recipe's cache key (e.g. AdobeReader.munki.recipe). "
+        "Omit to clear the entire cache.",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Remove cloud-autopkg-runner metadata cache entries.
+
+    Stale entries cause **no_change** on the next run even after you delete a pkginfo:
+    the runner still believes upstream matches the cached version. Clear the recipe's
+    key (or the whole cache) before re-importing.
+    """
+    if recipe_key:
+        result = await session.execute(
+            delete(AutoPkgMetadataCacheEntry).where(AutoPkgMetadataCacheEntry.recipe_key == recipe_key)
+        )
+        deleted = result.rowcount or 0
+        if deleted == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No metadata cache entry for recipe_key={recipe_key!r}",
+            )
+        await session.commit()
+        return {"deleted": deleted, "recipe_key": recipe_key}
+
+    result = await session.execute(delete(AutoPkgMetadataCacheEntry))
+    deleted = result.rowcount or 0
+    await session.commit()
+    return {"deleted": deleted, "recipe_key": None}
+
+
 # ── Pkginfo ingestion ────────────────────────────────────────────────────
 
 
@@ -1196,7 +1466,13 @@ async def ingest_pkginfo(
             "version": version,
         }
 
-    catalog_names: list[str] = plist.get("catalogs", [])
+    raw_catalogs = plist.get("catalogs", [])
+    if isinstance(raw_catalogs, str):
+        catalog_names = [c.strip() for c in re.split(r"[,/|]+", raw_catalogs) if c.strip()]
+    elif isinstance(raw_catalogs, list):
+        catalog_names = [str(x).strip() for x in raw_catalogs if str(x).strip()]
+    else:
+        catalog_names = []
 
     pkg = PkgInfo(
         name=name,
