@@ -28,6 +28,11 @@ const nextConfig: NextConfig = {
         source: '/repo/:path*',
         destination: `${backend}/repo/:path*`,
       },
+      // After `public/icons/*` misses, serve uploaded PNGs from the API (same path as upload target).
+      {
+        source: '/icons/:path*',
+        destination: `${backend}/api/v1/icons/:path*`,
+      },
     ]
   },
 }

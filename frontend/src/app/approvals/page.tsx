@@ -9,6 +9,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/components/auth-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,6 +23,7 @@ import {
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { munkiAccents } from '@/lib/munki-accents'
+import { PAGE_KEYS } from '@/lib/page-keys'
 import {
   githubBlobUrlForTrustEntry,
   trustRepoPathForTrustEntry,
@@ -400,38 +402,40 @@ export default function ApprovalsPage() {
                               </p>
                             )}
                         </div>
-                        <div className="flex shrink-0 gap-2">
-                          <Button
-                            size="sm"
-                            variant="default"
-                            aria-label={`Approve ${title}`}
-                            onClick={() =>
-                              approveMutation.mutate({
-                                id: item.id,
-                                approved: true,
-                              })
-                            }
-                            disabled={approveMutation.isPending}
-                          >
-                            <CheckCircle className="mr-1 h-4 w-4" />
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            aria-label={`Reject ${title}`}
-                            onClick={() =>
-                              approveMutation.mutate({
-                                id: item.id,
-                                approved: false,
-                              })
-                            }
-                            disabled={approveMutation.isPending}
-                          >
-                            <XCircle className="mr-1 h-4 w-4" />
-                            Reject
-                          </Button>
-                        </div>
+                        {canMutateApprovals ? (
+                          <div className="flex shrink-0 gap-2">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              aria-label={`Approve ${title}`}
+                              onClick={() =>
+                                approveMutation.mutate({
+                                  id: item.id,
+                                  approved: true,
+                                })
+                              }
+                              disabled={approveMutation.isPending}
+                            >
+                              <CheckCircle className="mr-1 h-4 w-4" />
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              aria-label={`Reject ${title}`}
+                              onClick={() =>
+                                approveMutation.mutate({
+                                  id: item.id,
+                                  approved: false,
+                                })
+                              }
+                              disabled={approveMutation.isPending}
+                            >
+                              <XCircle className="mr-1 h-4 w-4" />
+                              Reject
+                            </Button>
+                          </div>
+                        ) : null}
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="grid gap-2 md:grid-cols-3">
@@ -507,38 +511,40 @@ export default function ApprovalsPage() {
                             Trust Changed
                           </Badge>
                         </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="default"
-                            aria-label={`Approve trust for ${recipe?.name ?? 'recipe'}`}
-                            onClick={() =>
-                              trustApproveMutation.mutate({
-                                recipeId: change.recipe_id,
-                                approved: true,
-                              })
-                            }
-                            disabled={trustApproveMutation.isPending}
-                          >
-                            <CheckCircle className="mr-1 h-4 w-4" />
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            aria-label={`Reject trust for ${recipe?.name ?? 'recipe'}`}
-                            onClick={() =>
-                              trustApproveMutation.mutate({
-                                recipeId: change.recipe_id,
-                                approved: false,
-                              })
-                            }
-                            disabled={trustApproveMutation.isPending}
-                          >
-                            <XCircle className="mr-1 h-4 w-4" />
-                            Reject
-                          </Button>
-                        </div>
+                        {canMutateApprovals ? (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              aria-label={`Approve trust for ${recipe?.name ?? 'recipe'}`}
+                              onClick={() =>
+                                trustApproveMutation.mutate({
+                                  recipeId: change.recipe_id,
+                                  approved: true,
+                                })
+                              }
+                              disabled={trustApproveMutation.isPending}
+                            >
+                              <CheckCircle className="mr-1 h-4 w-4" />
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              aria-label={`Reject trust for ${recipe?.name ?? 'recipe'}`}
+                              onClick={() =>
+                                trustApproveMutation.mutate({
+                                  recipeId: change.recipe_id,
+                                  approved: false,
+                                })
+                              }
+                              disabled={trustApproveMutation.isPending}
+                            >
+                              <XCircle className="mr-1 h-4 w-4" />
+                              Reject
+                            </Button>
+                          </div>
+                        ) : null}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>

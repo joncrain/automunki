@@ -259,6 +259,7 @@ async def list_catalog_items(
             id=p.id,
             name=p.name,
             display_name=p.display_name,
+            icon_name=p.icon_name,
             version=p.version,
             category=p.category,
             developer=p.developer,

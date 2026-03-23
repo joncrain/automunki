@@ -19,8 +19,18 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   })
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(error.detail || `API error: ${res.status}`)
+    const errBody = await res.json().catch(() => ({ detail: res.statusText }))
+    const d = errBody.detail
+    const msg =
+      typeof d === 'string'
+        ? d
+        : Array.isArray(d)
+          ? d
+              .map((x: { msg?: string }) => x?.msg)
+              .filter(Boolean)
+              .join('; ')
+          : res.statusText
+    throw new Error(msg || `API error: ${res.status}`)
   }
 
   if (res.status === 204) return {} as T
@@ -33,7 +43,67 @@ export const api = {
     apiFetch<T>(path, { method: 'POST', body: JSON.stringify(body) }),
   put: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
+  patch: <T>(path: string, body?: unknown) =>
+    apiFetch<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: <T>(path: string) => apiFetch<T>(path, { method: 'DELETE' }),
+}
+
+/** Upload a PNG or JPEG as the current user's profile avatar. */
+export async function uploadUserAvatar(file: File): Promise<void> {
+  const token =
+    typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  const fd = new FormData()
+  fd.append('file', file)
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const res = await fetch(`${API_BASE}/api/v1/users/me/avatar`, {
+    method: 'POST',
+    headers,
+    body: fd,
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({ detail: res.statusText }))
+    const d = errBody.detail
+    const msg =
+      typeof d === 'string'
+        ? d
+        : Array.isArray(d)
+          ? d
+              .map((x: { msg?: string }) => x?.msg)
+              .filter(Boolean)
+              .join('; ')
+          : res.statusText
+    throw new Error(msg || `API error: ${res.status}`)
+  }
+}
+
+export async function deleteUserAvatar(): Promise<void> {
+  const token =
+    typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const res = await fetch(`${API_BASE}/api/v1/users/me/avatar`, {
+    method: 'DELETE',
+    headers,
+  })
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({ detail: res.statusText }))
+    const d = errBody.detail
+    const msg =
+      typeof d === 'string'
+        ? d
+        : Array.isArray(d)
+          ? d
+              .map((x: { msg?: string }) => x?.msg)
+              .filter(Boolean)
+              .join('; ')
+          : res.statusText
+    throw new Error(msg || `API error: ${res.status}`)
+  }
 }
 
 export interface IconUploadResult {
@@ -85,10 +155,21 @@ export interface PaginatedResponse<T> {
   total_pages: number
 }
 
+export interface PkgInfoBulkUpdateRequest {
+  pkginfo_ids: string[]
+  category?: string | null
+  catalog_names?: string[]
+}
+
+export interface PkgInfoBulkUpdateResult {
+  updated: number
+}
+
 export interface PkgInfoSummary {
   id: string
   name: string
   display_name: string | null
+  icon_name: string | null
   version: string
   category: string | null
   developer: string | null
@@ -184,12 +265,25 @@ export interface CatalogRead {
   item_count: number
 }
 
+/** Matches backend `ConditionalItemBlock` (Munki conditional_items array entries). */
+export type ConditionalItemBlock = {
+  condition: string
+  managed_installs?: string[]
+  managed_uninstalls?: string[]
+  managed_updates?: string[]
+  optional_installs?: string[]
+  featured_items?: string[]
+  default_installs?: string[]
+  included_manifests?: string[]
+  conditional_items?: ConditionalItemBlock[]
+}
+
 export interface ManifestRead {
   id: string
   name: string
   display_name: string | null
   notes: string | null
-  conditional_items: unknown
+  conditional_items: ConditionalItemBlock[] | null
   catalog_names: string[]
   managed_installs: string[]
   managed_uninstalls: string[]
@@ -265,6 +359,9 @@ export interface AutoPkgRecipeRead {
   last_run_status: string | null
   created_at: string
   updated_at: string
+  /** Resolved server-side from PkgInfo (Input.NAME / recipe name). Omitted on older APIs. */
+  pkginfo_display_name?: string | null
+  pkginfo_icon_name?: string | null
 }
 
 export interface TrustChangeRequestRead {

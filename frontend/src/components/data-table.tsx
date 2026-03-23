@@ -6,6 +6,7 @@ import {
   getCoreRowModel,
   getSortedRowModel,
   type OnChangeFn,
+  type RowSelectionState,
   type SortingState,
   useReactTable,
   type VisibilityState,
@@ -18,8 +19,9 @@ import {
   ChevronRight,
   Settings2,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -60,6 +62,10 @@ interface DataTableProps<TData, TValue> {
   columnVisibility?: VisibilityState
   onColumnVisibilityChange?: OnChangeFn<VisibilityState>
   hideColumnPicker?: boolean
+  enableRowSelection?: boolean
+  rowSelection?: RowSelectionState
+  onRowSelectionChange?: OnChangeFn<RowSelectionState>
+  getRowId?: (row: TData) => string
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -70,6 +76,35 @@ function columnDefId<TData, TValue>(col: ColumnDef<TData, TValue>): string {
     return String(col.accessorKey)
   }
   return ''
+}
+
+function selectColumnDef<TData>(): ColumnDef<TData, unknown> {
+  return {
+    id: 'select',
+    header: ({ table }) => (
+      <Checkbox
+        checked={
+          table.getIsAllPageRowsSelected()
+            ? true
+            : table.getIsSomePageRowsSelected()
+              ? 'indeterminate'
+              : false
+        }
+        onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
+        aria-label="Select all rows on this page"
+      />
+    ),
+    cell: ({ row }) => (
+      <Checkbox
+        checked={row.getIsSelected()}
+        onCheckedChange={(v) => row.toggleSelected(!!v)}
+        aria-label="Select row"
+        onClick={(e) => e.stopPropagation()}
+      />
+    ),
+    enableSorting: false,
+    enableHiding: false,
+  }
 }
 
 export function ColumnVisibilityMenu<TData, TValue>({
@@ -136,29 +171,61 @@ export function DataTable<TData, TValue>({
   columnVisibility: columnVisibilityProp,
   onColumnVisibilityChange: onColumnVisibilityChangeProp,
   hideColumnPicker = false,
+  enableRowSelection = false,
+  rowSelection: rowSelectionProp,
+  onRowSelectionChange: onRowSelectionChangeProp,
+  getRowId: getRowIdProp,
 }: DataTableProps<TData, TValue>) {
   const [internalSorting, setInternalSorting] = useState<SortingState>([])
   const [internalColumnVisibility, setInternalColumnVisibility] =
     useState<VisibilityState>(() => defaultColumnVisibility ?? {})
+  const [internalRowSelection, setInternalRowSelection] =
+    useState<RowSelectionState>({})
 
   const columnVisibility =
     columnVisibilityProp !== undefined
       ? columnVisibilityProp
       : internalColumnVisibility
 
+  const rowSelection = rowSelectionProp ?? internalRowSelection
+  const handleRowSelectionChange =
+    onRowSelectionChangeProp ?? setInternalRowSelection
+
+  const tableColumns = useMemo(
+    () =>
+      enableRowSelection ? [selectColumnDef<TData>(), ...columns] : columns,
+    [enableRowSelection, columns],
+  )
+
+  const colSpan = tableColumns.length
+
   const isManualSort = !!externalOnSortingChange
   const sorting = externalSorting ?? internalSorting
 
   const table = useReactTable({
     data,
-    columns,
+    columns: tableColumns,
     getCoreRowModel: getCoreRowModel(),
     ...(isManualSort
       ? { manualSorting: true }
       : { getSortedRowModel: getSortedRowModel() }),
     manualPagination: true,
     pageCount,
-    state: { sorting, columnVisibility },
+    enableRowSelection,
+    onRowSelectionChange: enableRowSelection
+      ? handleRowSelectionChange
+      : undefined,
+    getRowId: getRowIdProp
+      ? (row) => getRowIdProp(row)
+      : (row, index) => {
+          const r = row as { id?: string }
+          return r.id ?? String(index)
+        },
+    state: {
+      sorting,
+      columnVisibility,
+      ...(enableRowSelection ? { rowSelection } : {}),
+    },
     onSortingChange: (updater) => {
       const next = typeof updater === 'function' ? updater(sorting) : updater
       if (externalOnSortingChange) {
@@ -241,16 +308,19 @@ export function DataTable<TData, TValue>({
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center"
-                >
+                <TableCell colSpan={colSpan} className="h-24 text-center">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() ? 'selected' : undefined}
+                  className={
+                    row.getIsSelected() ? 'bg-muted/40 hover:bg-muted/50' : ''
+                  }
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(
@@ -263,10 +333,7 @@ export function DataTable<TData, TValue>({
               ))
             ) : (
               <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center"
-                >
+                <TableCell colSpan={colSpan} className="h-24 text-center">
                   No results.
                 </TableCell>
               </TableRow>

@@ -5,7 +5,18 @@ import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { uploadSoftwareIcon } from '@/lib/api'
+import { isPkginfoNamePlaceholder } from '@/lib/autopkg-recipe'
 import { cn } from '@/lib/utils'
+
+function effectiveUploadStem(
+  currentIconName: string,
+  suggestedBasename: string,
+): string {
+  const cur = currentIconName.trim()
+  const sug = suggestedBasename.trim()
+  if (cur && !isPkginfoNamePlaceholder(cur)) return cur
+  return sug
+}
 
 export function PkginfoIconUpload({
   suggestedBasename,
@@ -27,7 +38,7 @@ export function PkginfoIconUpload({
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    const stem = (currentIconName || suggestedBasename).trim()
+    const stem = effectiveUploadStem(currentIconName, suggestedBasename)
     if (!stem) {
       toast.error('Set package name or icon name before uploading')
       return

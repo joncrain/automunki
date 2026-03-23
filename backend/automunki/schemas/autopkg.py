@@ -62,6 +62,9 @@ class AutoPkgRecipeRead(AutoPkgRecipeBase):
     last_run_status: str | None = None
     created_at: datetime
     updated_at: datetime
+    #: Resolved from ``PkgInfo`` by the same key as the UI (``Input.NAME`` or recipe file name).
+    pkginfo_display_name: str | None = None
+    pkginfo_icon_name: str | None = None
 
     model_config = {"from_attributes": True}
 

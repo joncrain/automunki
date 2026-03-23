@@ -5,6 +5,7 @@ import { FolderOpen, Plus, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { useAuth } from '@/components/auth-provider'
 import { CatalogSoftwareAvatarCircles } from '@/components/software-avatar-circles'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
@@ -26,9 +27,13 @@ import { Switch } from '@/components/ui/switch'
 import { api, type CatalogRead, type PkgInfoSummary } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { munkiAccents } from '@/lib/munki-accents'
+import { PAGE_KEYS } from '@/lib/page-keys'
 import { cn } from '@/lib/utils'
 
 export default function CatalogsPage() {
+  const { canWrite } = useAuth()
+  const canEditCatalogs = canWrite(PAGE_KEYS.munkiCatalogs)
+
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
@@ -103,73 +108,75 @@ export default function CatalogsPage() {
         >
           Catalogs
         </h1>
-        <Dialog
-          open={createOpen}
-          onOpenChange={(v) => {
-            setCreateOpen(v)
-            if (!v) resetCreateForm()
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-1 h-4 w-4" />
-              New Catalog
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Catalog</DialogTitle>
-              <DialogDescription>
-                Create a new Munki catalog. Software can be assigned to it
-                afterwards.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="catalog-name">Name</Label>
-                <Input
-                  id="catalog-name"
-                  placeholder="e.g. production"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreate()
-                  }}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="catalog-description">
-                  Description (optional)
-                </Label>
-                <Input
-                  id="catalog-description"
-                  placeholder="e.g. Production software catalog"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreate()
-                  }}
-                />
-              </div>
-              <div className="flex items-center gap-3">
-                <Switch
-                  id="catalog-production"
-                  checked={isProduction}
-                  onCheckedChange={setIsProduction}
-                />
-                <Label htmlFor="catalog-production">Production catalog</Label>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                onClick={handleCreate}
-                disabled={!name.trim() || createMutation.isPending}
-              >
-                {createMutation.isPending ? 'Creating...' : 'Create'}
+        {canEditCatalogs ? (
+          <Dialog
+            open={createOpen}
+            onOpenChange={(v) => {
+              setCreateOpen(v)
+              if (!v) resetCreateForm()
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-1 h-4 w-4" />
+                New Catalog
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Catalog</DialogTitle>
+                <DialogDescription>
+                  Create a new Munki catalog. Software can be assigned to it
+                  afterwards.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="catalog-name">Name</Label>
+                  <Input
+                    id="catalog-name"
+                    placeholder="e.g. production"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreate()
+                    }}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="catalog-description">
+                    Description (optional)
+                  </Label>
+                  <Input
+                    id="catalog-description"
+                    placeholder="e.g. Production software catalog"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreate()
+                    }}
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="catalog-production"
+                    checked={isProduction}
+                    onCheckedChange={setIsProduction}
+                  />
+                  <Label htmlFor="catalog-production">Production catalog</Label>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  onClick={handleCreate}
+                  disabled={!name.trim() || createMutation.isPending}
+                >
+                  {createMutation.isPending ? 'Creating...' : 'Create'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : null}
       </div>
 
       {/* Delete Confirmation Dialog */}
@@ -215,6 +222,7 @@ export default function CatalogsPage() {
           catalog={viewCatalog}
           onClose={() => setViewCatalog(null)}
           onUpdated={setViewCatalog}
+          readOnly={!canEditCatalogs}
         />
       )}
 
@@ -237,18 +245,20 @@ export default function CatalogsPage() {
                 {catalog.is_production && (
                   <Badge variant="default">Production</Badge>
                 )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  aria-label={`Delete ${catalog.name}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setDeleteCatalog(catalog)
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {canEditCatalogs ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    aria-label={`Delete ${catalog.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setDeleteCatalog(catalog)
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                ) : null}
               </div>
             </CardHeader>
             <CardContent>
@@ -297,10 +307,12 @@ function CatalogDetailDialog({
   catalog,
   onClose,
   onUpdated,
+  readOnly = false,
 }: {
   catalog: CatalogRead
   onClose: () => void
   onUpdated: (c: CatalogRead) => void
+  readOnly?: boolean
 }) {
   const queryClient = useQueryClient()
   const [editDescription, setEditDescription] = useState(
@@ -377,6 +389,7 @@ function CatalogDetailDialog({
               id="catalog-detail-description"
               placeholder="e.g. Production software catalog"
               value={editDescription}
+              readOnly={readOnly}
               onChange={(e) => setEditDescription(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && isDirty && !updateMutation.isPending) {
@@ -391,20 +404,23 @@ function CatalogDetailDialog({
               id="catalog-detail-production"
               checked={editIsProduction}
               onCheckedChange={setEditIsProduction}
+              disabled={readOnly}
             />
             <Label htmlFor="catalog-detail-production">
               Production catalog
             </Label>
           </div>
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              onClick={handleSave}
-              disabled={!isDirty || updateMutation.isPending}
-            >
-              {updateMutation.isPending ? 'Saving…' : 'Save changes'}
-            </Button>
-          </div>
+          {!readOnly ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={handleSave}
+                disabled={!isDirty || updateMutation.isPending}
+              >
+                {updateMutation.isPending ? 'Saving…' : 'Save changes'}
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <Separator className="shrink-0" />

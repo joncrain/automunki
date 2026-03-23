@@ -26,6 +26,7 @@ async def import_repo(repo_path: str):
         PkgInfoCatalog,
     )
     from automunki.services.audit import create_audit_entry
+    from automunki.services.trust import trust_info_from_plist_parent_recipe_trust
 
     repo = Path(repo_path)
     if not repo.exists():
@@ -217,10 +218,13 @@ async def import_repo(repo_path: str):
                         )
 
         # --- Import recipe overrides ---
-        overrides_dir = repo / "autopkg_src" / "overrides"
-        if overrides_dir.exists():
+        for rel in ("autopkg_src/overrides", "AutoPkg/Overrides"):
+            overrides_dir = repo / rel
+            if not overrides_dir.exists():
+                continue
+
             override_files = list(overrides_dir.glob("*.recipe"))
-            logger.info("importing_overrides", count=len(override_files))
+            logger.info("importing_overrides", dir=str(overrides_dir), count=len(override_files))
 
             for override_file in override_files:
                 try:
@@ -231,11 +235,28 @@ async def import_repo(repo_path: str):
                     continue
 
                 identifier = data.get("Identifier", "")
+                if not identifier:
+                    logger.warning("override_skip_no_identifier", file=str(override_file))
+                    continue
+
                 name = data.get("Input", {}).get("NAME", override_file.stem)
 
                 existing = await session.execute(select(AutoPkgRecipe).where(AutoPkgRecipe.identifier == identifier))
                 if existing.scalar_one_or_none():
                     continue
+
+                raw_trust = data.get("ParentRecipeTrustInfo")
+                override_plist = {
+                    "Identifier": identifier,
+                    "ParentRecipe": data.get("ParentRecipe") or "",
+                    "Input": _sanitize_plist_for_json(data.get("Input", {})),
+                }
+                if isinstance(raw_trust, dict):
+                    override_plist["ParentRecipeTrustInfo"] = _sanitize_plist_for_json(raw_trust)
+
+                trust_canonical = (
+                    trust_info_from_plist_parent_recipe_trust(raw_trust) if isinstance(raw_trust, dict) else None
+                )
 
                 recipe = AutoPkgRecipe(
                     identifier=identifier,
@@ -243,8 +264,8 @@ async def import_repo(repo_path: str):
                     parent_recipe=data.get("ParentRecipe"),
                     is_override=True,
                     is_enabled=True,
-                    override_data=_sanitize_plist_for_json(data.get("Input", {})),
-                    trust_info=_sanitize_plist_for_json(data.get("ParentRecipeTrustInfo", {})),
+                    override_data=override_plist,
+                    trust_info=trust_canonical,
                     input_variables=_sanitize_plist_for_json(data.get("Input", {})),
                 )
                 session.add(recipe)

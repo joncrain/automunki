@@ -13,6 +13,7 @@ import {
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { useAuth } from '@/components/auth-provider'
 import { DataTable } from '@/components/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -50,6 +51,7 @@ import {
 } from '@/lib/autopkg-run'
 import { formatDateTime } from '@/lib/format'
 import { munkiAccents } from '@/lib/munki-accents'
+import { PAGE_KEYS } from '@/lib/page-keys'
 import { cn } from '@/lib/utils'
 
 const STATUS_OPTIONS = [
@@ -78,6 +80,9 @@ const statusVariant = (status: string) => {
 }
 
 export default function AutoPkgRunsPage() {
+  const { canWrite } = useAuth()
+  const canTriggerRuns = canWrite(PAGE_KEYS.autopkgRuns)
+
   const [page, setPage] = useQueryState('page', parseAsInteger.withDefault(1))
   const [pageSize, setPageSize] = useQueryState(
     'pageSize',
@@ -239,6 +244,7 @@ export default function AutoPkgRunsPage() {
           AutoPkg Runs
         </h1>
         <TriggerRunDialog
+          canTrigger={canTriggerRuns}
           onTrigger={(recipeNames, runner) =>
             triggerMutation.mutate({ recipeNames, runner })
           }
@@ -416,9 +422,11 @@ function RecipeCheckItem({
 }
 
 function TriggerRunDialog({
+  canTrigger,
   onTrigger,
   isPending,
 }: {
+  canTrigger: boolean
   onTrigger: (recipeNames: string[] | null, runner: 'github' | 'local') => void
   isPending: boolean
 }) {
@@ -505,6 +513,10 @@ function TriggerRunDialog({
     setOpen(false)
     setSelected(new Set())
     setRecipeSearch('')
+  }
+
+  if (!canTrigger) {
+    return null
   }
 
   return (

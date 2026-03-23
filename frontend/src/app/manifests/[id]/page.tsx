@@ -1,27 +1,14 @@
 'use client'
 
-import {
-  closestCenter,
-  DndContext,
-  type DragEndEvent,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileText, GripVertical, Plus, Save, X } from 'lucide-react'
+import { FileText, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { useAuth } from '@/components/auth-provider'
+import { ManifestConditionalBlocksEditor } from '@/components/manifest-conditional-blocks-editor'
+import { ManifestItemSectionsTabs } from '@/components/manifest-item-sections-tabs'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -42,77 +29,37 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { Textarea } from '@/components/ui/textarea'
+import { usePkginfoDisplayLabels } from '@/hooks/use-pkginfo-display-labels'
+import { api, type CatalogRead, type ManifestRead } from '@/lib/api'
 import {
-  api,
-  type CatalogRead,
-  type ManifestRead,
-  type PaginatedResponse,
-  type PkgInfoSummary,
-} from '@/lib/api'
+  type ConditionalItemBlock,
+  collectManifestItemRefsFromConditional,
+  parseConditionalItemsFromApi,
+  serializeConditionalItemsForApi,
+  validateConditionalBlocks,
+} from '@/lib/manifest-conditional-items'
+import type { ManifestItemSectionKey } from '@/lib/manifest-item-section-defs'
+import { manifestTitle, manifestTitleForName } from '@/lib/manifest-title'
 import { munkiAccents } from '@/lib/munki-accents'
+import { PAGE_KEYS } from '@/lib/page-keys'
 import { cn } from '@/lib/utils'
 
-const ITEM_SECTIONS = [
-  {
-    key: 'managed_installs',
-    label: 'Managed Installs',
-    variant: 'outline' as const,
-    accent:
-      'border-l-gruvbox-blue/70 bg-gruvbox-blue/[0.07] dark:bg-gruvbox-blue/[0.12]',
-    rowAccent:
-      'border-gruvbox-blue/30 bg-gruvbox-blue/[0.04] dark:bg-gruvbox-blue/[0.08]',
-  },
-  {
-    key: 'managed_uninstalls',
-    label: 'Managed Uninstalls',
-    variant: 'destructive' as const,
-    accent:
-      'border-l-destructive/80 bg-destructive/[0.08] dark:bg-destructive/[0.12]',
-    rowAccent:
-      'border-destructive/35 bg-destructive/[0.06] dark:bg-destructive/[0.1]',
-  },
-  {
-    key: 'managed_updates',
-    label: 'Managed Updates',
-    variant: 'secondary' as const,
-    accent:
-      'border-l-gruvbox-aqua/70 bg-gruvbox-aqua/[0.07] dark:bg-gruvbox-aqua/[0.1]',
-    rowAccent:
-      'border-gruvbox-aqua/30 bg-gruvbox-aqua/[0.04] dark:bg-gruvbox-aqua/[0.08]',
-  },
-  {
-    key: 'optional_installs',
-    label: 'Optional Installs',
-    variant: 'outline' as const,
-    accent: 'border-l-muted-foreground/50 bg-muted/40 dark:bg-muted/25',
-    rowAccent: 'border-muted-foreground/25 bg-muted/30 dark:bg-muted/20',
-  },
-  {
-    key: 'featured_items',
-    label: 'Featured Items',
-    variant: 'default' as const,
-    accent:
-      'border-l-gruvbox-yellow/60 bg-gruvbox-yellow/[0.08] dark:bg-gruvbox-yellow/[0.12]',
-    rowAccent:
-      'border-gruvbox-yellow/30 bg-gruvbox-yellow/[0.05] dark:bg-gruvbox-yellow/[0.08]',
-  },
-  {
-    key: 'default_installs',
-    label: 'Default Installs',
-    variant: 'secondary' as const,
-    accent:
-      'border-l-gruvbox-purple/60 bg-gruvbox-purple/[0.07] dark:bg-gruvbox-purple/[0.1]',
-    rowAccent:
-      'border-gruvbox-purple/30 bg-gruvbox-purple/[0.04] dark:bg-gruvbox-purple/[0.08]',
-  },
-] as const
-
-type SectionKey = (typeof ITEM_SECTIONS)[number]['key']
-type SectionsState = Record<SectionKey, string[]>
+type SectionsState = Record<ManifestItemSectionKey, string[]>
 
 function manifestToSections(m: ManifestRead): SectionsState {
   return {
@@ -132,15 +79,28 @@ const commandRootClass = 'flex min-h-0 flex-1 flex-col overflow-hidden'
 
 export default function ManifestDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const queryClient = useQueryClient()
   const id = params.id as string
 
+  const { canWrite } = useAuth()
+  const canMutateManifests = canWrite(PAGE_KEYS.munkiManifests)
+
   const [sections, setSections] = useState<SectionsState | null>(null)
+  const [conditionalItems, setConditionalItems] = useState<
+    ConditionalItemBlock[]
+  >([])
   const [catalogNames, setCatalogNames] = useState<string[]>([])
   const [includedManifestNames, setIncludedManifestNames] = useState<string[]>(
     [],
   )
   const [dirty, setDirty] = useState(false)
+  const hydratedManifestId = useRef<string | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [metaDialogOpen, setMetaDialogOpen] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editDisplayName, setEditDisplayName] = useState('')
+  const [editNotes, setEditNotes] = useState('')
 
   const { data: manifest, isLoading } = useQuery({
     queryKey: ['manifest', id],
@@ -148,12 +108,16 @@ export default function ManifestDetailPage() {
   })
 
   useEffect(() => {
-    if (manifest && !sections) {
-      setSections(manifestToSections(manifest))
-      setCatalogNames([...manifest.catalog_names])
-      setIncludedManifestNames([...manifest.included_manifest_names])
-    }
-  }, [manifest, sections])
+    if (!manifest) return
+    if (hydratedManifestId.current === manifest.id) return
+    hydratedManifestId.current = manifest.id
+    setSections(manifestToSections(manifest))
+    setCatalogNames([...manifest.catalog_names])
+    setIncludedManifestNames([...manifest.included_manifest_names])
+    setConditionalItems(
+      parseConditionalItemsFromApi(manifest.conditional_items),
+    )
+  }, [manifest])
 
   const saveMutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
@@ -166,6 +130,51 @@ export default function ManifestDetailPage() {
     },
     onError: (err: Error) => toast.error(`Save failed: ${err.message}`),
   })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/manifests/${id}`),
+    onSuccess: () => {
+      toast.success('Manifest deleted')
+      queryClient.invalidateQueries({ queryKey: ['manifests'] })
+      queryClient.removeQueries({ queryKey: ['manifest', id] })
+      setDeleteOpen(false)
+      router.push('/manifests')
+    },
+    onError: (err: Error) => toast.error(`Delete failed: ${err.message}`),
+  })
+
+  const metaMutation = useMutation({
+    mutationFn: (payload: {
+      name: string
+      display_name: string | null
+      notes: string | null
+    }) => api.put(`/manifests/${id}`, payload),
+    onSuccess: () => {
+      toast.success('Manifest details updated')
+      queryClient.invalidateQueries({ queryKey: ['manifest', id] })
+      queryClient.invalidateQueries({ queryKey: ['manifests'] })
+      setMetaDialogOpen(false)
+    },
+    onError: (err: Error) => toast.error(`Update failed: ${err.message}`),
+  })
+
+  const openMetaDialog = () => {
+    if (!manifest) return
+    setEditName(manifest.name)
+    setEditDisplayName(manifest.display_name ?? '')
+    setEditNotes(manifest.notes ?? '')
+    setMetaDialogOpen(true)
+  }
+
+  const handleMetaSave = () => {
+    const n = editName.trim()
+    if (!n) return
+    metaMutation.mutate({
+      name: n,
+      display_name: editDisplayName.trim() || null,
+      notes: editNotes.trim() || null,
+    })
+  }
 
   const handleBeforeUnload = useCallback(
     (e: BeforeUnloadEvent) => {
@@ -181,14 +190,20 @@ export default function ManifestDetailPage() {
 
   const handleSave = () => {
     if (!sections) return
+    const err = validateConditionalBlocks(conditionalItems)
+    if (err) {
+      toast.error(err)
+      return
+    }
     saveMutation.mutate({
       ...sections,
       catalog_names: catalogNames,
       included_manifest_names: includedManifestNames,
+      conditional_items: serializeConditionalItemsForApi(conditionalItems),
     })
   }
 
-  const addItem = (section: SectionKey, name: string) => {
+  const addItem = (section: ManifestItemSectionKey, name: string) => {
     setSections((prev) => {
       if (!prev) return prev
       if (prev[section].includes(name)) return prev
@@ -197,7 +212,7 @@ export default function ManifestDetailPage() {
     setDirty(true)
   }
 
-  const removeItem = (section: SectionKey, name: string) => {
+  const removeItem = (section: ManifestItemSectionKey, name: string) => {
     setSections((prev) => {
       if (!prev) return prev
       return { ...prev, [section]: prev[section].filter((n) => n !== name) }
@@ -206,7 +221,7 @@ export default function ManifestDetailPage() {
   }
 
   const reorderItems = (
-    section: SectionKey,
+    section: ManifestItemSectionKey,
     oldIndex: number,
     newIndex: number,
   ) => {
@@ -242,6 +257,38 @@ export default function ManifestDetailPage() {
     setDirty(true)
   }
 
+  const replaceSectionItem = (
+    section: ManifestItemSectionKey,
+    oldRaw: string,
+    newRaw: string,
+  ) => {
+    if (newRaw === oldRaw) return
+    setSections((prev) => {
+      if (!prev) return prev
+      const list = prev[section]
+      const idx = list.indexOf(oldRaw)
+      if (idx === -1) return prev
+      if (list.some((x, i) => x === newRaw && i !== idx)) {
+        toast.error('That item is already in this list')
+        return prev
+      }
+      const next = [...list]
+      next[idx] = newRaw
+      return { ...prev, [section]: next }
+    })
+    setDirty(true)
+  }
+
+  const uniqueInstallNames = useMemo(() => {
+    if (!sections) return []
+    const fromSections = Object.values(sections).flat()
+    const fromConditional =
+      collectManifestItemRefsFromConditional(conditionalItems)
+    return [...new Set([...fromSections, ...fromConditional])]
+  }, [sections, conditionalItems])
+
+  const { data: pkgDisplayLabels } = usePkginfoDisplayLabels(uniqueInstallNames)
+
   if (isLoading || !manifest) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -259,62 +306,212 @@ export default function ManifestDetailPage() {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbPage>{manifest.name}</BreadcrumbPage>
+            <BreadcrumbPage>{manifestTitle(manifest)}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <h1
-          className={cn(
-            'text-3xl font-bold text-pretty',
-            munkiAccents.manifests.pageTitle,
-          )}
-        >
-          {manifest.name}
-        </h1>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <Button
-            onClick={handleSave}
-            disabled={!dirty || saveMutation.isPending}
-          >
-            <Save data-icon="inline-start" />
-            {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-          </Button>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-1">
+            <h1
+              className={cn(
+                'inline-flex min-w-0 max-w-full items-center gap-1.5 text-3xl font-bold text-pretty',
+                munkiAccents.manifests.pageTitle,
+              )}
+            >
+              <span className="min-w-0 max-w-full flex-1 truncate flex items-center gap-1">
+                {manifestTitle(manifest)}
+                {canMutateManifests ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0 text-muted-foreground/20 hover:bg-muted/50 hover:text-foreground"
+                    aria-label="Edit manifest name, display name, and notes"
+                    onClick={openMetaDialog}
+                    disabled={
+                      saveMutation.isPending ||
+                      deleteMutation.isPending ||
+                      metaMutation.isPending
+                    }
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                ) : null}
+              </span>
+            </h1>
+            {manifest.display_name?.trim() ? (
+              <p className="font-mono text-sm text-muted-foreground">
+                {manifest.name}
+              </p>
+            ) : null}
+          </div>
+          {manifest.notes?.trim() ? (
+            <p className="mt-2 max-w-3xl whitespace-pre-wrap text-sm text-muted-foreground">
+              {manifest.notes}
+            </p>
+          ) : null}
         </div>
+        {canMutateManifests ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button
+              onClick={handleSave}
+              disabled={!dirty || saveMutation.isPending}
+            >
+              <Save data-icon="inline-start" />
+              {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="text-muted-foreground hover:text-destructive"
+              aria-label="Delete manifest"
+              onClick={() => setDeleteOpen(true)}
+              disabled={saveMutation.isPending || deleteMutation.isPending}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : null}
       </div>
+
+      <Dialog open={metaDialogOpen} onOpenChange={setMetaDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Manifest details</DialogTitle>
+            <DialogDescription>
+              Plist name (used by Munki clients), optional display label, and
+              internal notes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-1">
+            <div className="grid gap-2">
+              <Label htmlFor="manifest-edit-name">Name</Label>
+              <Input
+                id="manifest-edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                autoComplete="off"
+                placeholder="e.g. site_default"
+              />
+              <p className="text-xs text-muted-foreground">
+                This is the manifest name in the repo and in{' '}
+                <code className="rounded bg-muted px-1 py-0.5 text-[0.8rem]">
+                  included_manifests
+                </code>
+                . Renaming updates plist output; ensure your repo sync matches.
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="manifest-edit-display-name">
+                Display name (optional)
+              </Label>
+              <Input
+                id="manifest-edit-display-name"
+                value={editDisplayName}
+                onChange={(e) => setEditDisplayName(e.target.value)}
+                autoComplete="off"
+                placeholder="Shown in Automunki only"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="manifest-edit-notes">Notes (optional)</Label>
+              <Textarea
+                id="manifest-edit-notes"
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                rows={4}
+                placeholder="Internal notes…"
+                className="resize-y"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setMetaDialogOpen(false)}
+              disabled={metaMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleMetaSave}
+              disabled={metaMutation.isPending || !editName.trim()}
+            >
+              {metaMutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete manifest</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &ldquo;
+              {manifestTitle(manifest)}&rdquo;? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteOpen(false)}
+              disabled={deleteMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ManifestCatalogRow
         catalogNames={catalogNames}
         onAdd={addCatalog}
         onRemove={removeCatalog}
-        disabled={saveMutation.isPending}
+        disabled={saveMutation.isPending || !canMutateManifests}
       />
 
       <IncludedManifestsPanel
-        currentName={manifest.name}
+        currentManifestName={manifest.name}
+        currentTitle={manifestTitle(manifest)}
         includedNames={includedManifestNames}
         onAdd={addIncludedManifest}
         onRemove={removeIncludedManifest}
+        editDisabled={!canMutateManifests}
       />
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {ITEM_SECTIONS.map((sec) => (
-          <SortableSection
-            key={sec.key}
-            label={sec.label}
-            badgeVariant={sec.variant}
-            accent={sec.accent}
-            rowAccent={sec.rowAccent}
-            items={sections?.[sec.key] ?? []}
-            onAdd={(name) => addItem(sec.key, name)}
-            onRemove={(name) => removeItem(sec.key, name)}
-            onReorder={(oldIdx, newIdx) =>
-              reorderItems(sec.key, oldIdx, newIdx)
-            }
-          />
-        ))}
-      </div>
+      <ManifestItemSectionsTabs
+        sections={sections}
+        getItemLabel={(name) => pkgDisplayLabels?.[name] ?? name}
+        onAdd={addItem}
+        onRemove={removeItem}
+        onReorder={reorderItems}
+        onReplaceItem={replaceSectionItem}
+        disabled={saveMutation.isPending || !canMutateManifests}
+      />
+
+      <ManifestConditionalBlocksEditor
+        blocks={conditionalItems}
+        onChange={(next) => {
+          setConditionalItems(next)
+          setDirty(true)
+        }}
+        getPkgItemLabel={(name) => pkgDisplayLabels?.[name] ?? name}
+        currentManifestName={manifest.name}
+        disabled={saveMutation.isPending || !canMutateManifests}
+      />
     </div>
   )
 }
@@ -425,29 +622,75 @@ function ManifestCatalogRow({
   )
 }
 
+type InclusionTreeNode = {
+  name: string
+  id: string | undefined
+  /** True when this name already appears on the path (circular include). */
+  circular: boolean
+  children: InclusionTreeNode[]
+}
+
+const MAX_INCLUSION_TREE_DEPTH = 12
+
+function buildInclusionSubtree(
+  name: string,
+  manifestByName: Map<string, ManifestRead>,
+  path: Set<string>,
+  depth: number,
+): InclusionTreeNode {
+  const m = manifestByName.get(name)
+  const id = m?.id
+  if (path.has(name)) {
+    return { name, id, circular: true, children: [] }
+  }
+  if (depth >= MAX_INCLUSION_TREE_DEPTH || !m) {
+    return { name, id, circular: false, children: [] }
+  }
+  const nextPath = new Set(path)
+  nextPath.add(name)
+  const children: InclusionTreeNode[] = []
+  for (const childName of m.included_manifest_names) {
+    children.push(
+      buildInclusionSubtree(childName, manifestByName, nextPath, depth + 1),
+    )
+  }
+  return { name, id, circular: false, children }
+}
+
 function IncludedManifestsPanel({
-  currentName,
+  currentManifestName,
+  currentTitle,
   includedNames,
   onAdd,
   onRemove,
+  editDisabled = false,
 }: {
-  currentName: string
+  currentManifestName: string
+  currentTitle: string
   includedNames: string[]
   onAdd: (name: string) => void
   onRemove: (name: string) => void
+  editDisabled?: boolean
 }) {
   const { data: allManifests } = useQuery({
     queryKey: ['manifests'],
     queryFn: () => api.get<ManifestRead[]>('/manifests'),
   })
 
-  const idByName = useMemo(() => {
-    const m = new Map<string, string>()
+  const manifestByName = useMemo(() => {
+    const m = new Map<string, ManifestRead>()
     for (const man of allManifests ?? []) {
-      m.set(man.name, man.id)
+      m.set(man.name, man)
     }
     return m
   }, [allManifests])
+
+  const inclusionRoots = useMemo(() => {
+    const basePath = new Set([currentManifestName])
+    return includedNames.map((name) =>
+      buildInclusionSubtree(name, manifestByName, basePath, 0),
+    )
+  }, [currentManifestName, includedNames, manifestByName])
 
   return (
     <div className="rounded-xl border bg-muted/10 p-4">
@@ -457,13 +700,16 @@ function IncludedManifestsPanel({
             Included manifests
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Nested manifests are merged into this one (order matters in Munki).
+            Direct includes are editable. Indented rows show nested includes
+            from those manifests (merged by Munki; order still follows your
+            list).
           </p>
         </div>
         <AddManifestButton
           onAdd={onAdd}
           existingItems={includedNames}
-          currentManifestName={currentName}
+          currentManifestName={currentManifestName}
+          disabled={editDisabled}
         />
       </div>
 
@@ -479,8 +725,12 @@ function IncludedManifestsPanel({
             aria-hidden
           />
           <div className="min-w-0 flex-1">
-            <p className="truncate font-medium">{currentName}</p>
-            <p className="text-xs text-muted-foreground">This manifest</p>
+            <p className="truncate font-medium">{currentTitle}</p>
+            <p className="text-xs text-muted-foreground">
+              {currentTitle !== currentManifestName
+                ? currentManifestName
+                : 'This manifest'}
+            </p>
           </div>
           <Badge variant="outline" className="shrink-0 text-xs">
             root
@@ -489,52 +739,24 @@ function IncludedManifestsPanel({
 
         {includedNames.length > 0 && (
           <div className="ml-2 flex flex-col gap-2 border-l-2 border-muted-foreground/25 pl-4">
-            {includedNames.map((name, idx) => {
-              const childId = idByName.get(name)
-              return (
-                <div
-                  key={name}
-                  className="flex items-center gap-2 rounded-md border bg-card/90 px-3 py-2 shadow-sm"
-                >
-                  <FileText
-                    className="size-4 shrink-0 text-muted-foreground"
-                    aria-hidden
-                  />
-                  <div className="min-w-0 flex-1">
-                    {childId ? (
-                      <Link
-                        href={`/manifests/${childId}`}
-                        className="font-medium text-primary underline-offset-4 hover:underline"
-                      >
-                        {name}
-                      </Link>
-                    ) : (
-                      <span className="font-medium">{name}</span>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      Included #{idx + 1}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
-                    aria-label={`Remove included manifest ${name}`}
-                    onClick={() => onRemove(name)}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              )
-            })}
+            {inclusionRoots.map((root, idx) => (
+              <InclusionTreeBranch
+                key={`${idx}-${root.name}`}
+                node={root}
+                depth={0}
+                orderLabel={idx + 1}
+                manifestByName={manifestByName}
+                onRemoveDirect={onRemove}
+                editDisabled={editDisabled}
+              />
+            ))}
           </div>
         )}
 
         {includedNames.length === 0 && (
           <p className="text-sm text-muted-foreground">
             No included manifests. Use + to nest another manifest under{' '}
-            <span className="font-medium text-foreground">{currentName}</span>.
+            <span className="font-medium text-foreground">{currentTitle}</span>.
           </p>
         )}
       </div>
@@ -542,251 +764,116 @@ function IncludedManifestsPanel({
   )
 }
 
-function SortableSection({
-  label,
-  badgeVariant,
-  accent,
-  rowAccent,
-  items,
-  onAdd,
-  onRemove,
-  onReorder,
+function InclusionTreeBranch({
+  node,
+  depth,
+  orderLabel,
+  manifestByName,
+  onRemoveDirect,
+  editDisabled = false,
 }: {
-  label: string
-  badgeVariant: 'outline' | 'destructive' | 'secondary' | 'default'
-  accent: string
-  rowAccent: string
-  items: string[]
-  onAdd: (name: string) => void
-  onRemove: (name: string) => void
-  onReorder: (oldIndex: number, newIndex: number) => void
+  node: InclusionTreeNode
+  depth: number
+  /** Set for top-level direct includes only (1-based). */
+  orderLabel?: number
+  manifestByName: Map<string, ManifestRead>
+  onRemoveDirect: (name: string) => void
+  editDisabled?: boolean
 }) {
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  )
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const oldIndex = items.indexOf(active.id as string)
-    const newIndex = items.indexOf(over.id as string)
-    if (oldIndex !== -1 && newIndex !== -1) {
-      onReorder(oldIndex, newIndex)
-    }
-  }
+  const isDirect = depth === 0
+  const childId = node.id
+  const displayLabel = manifestTitleForName(manifestByName, node.name)
 
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-3 rounded-xl border bg-card py-4 shadow-sm',
-        'border-l-4',
-        accent,
-      )}
-    >
-      <div className="flex items-center justify-between gap-2 px-4">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-semibold">{label}</span>
-          <Badge variant="secondary" className="shrink-0 text-xs">
-            {items.length}
-          </Badge>
+    <div className="flex flex-col gap-2">
+      <div
+        className={cn(
+          'flex items-center gap-2 rounded-md border px-3 py-2 shadow-sm',
+          isDirect
+            ? 'bg-card/90'
+            : 'border-dashed border-muted-foreground/20 bg-muted/30',
+        )}
+      >
+        <FileText
+          className={cn(
+            'size-4 shrink-0',
+            isDirect
+              ? 'text-muted-foreground'
+              : 'size-3.5 text-muted-foreground/80',
+          )}
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
+            {childId ? (
+              <Link
+                href={`/manifests/${childId}`}
+                className={cn(
+                  'text-primary underline-offset-4 hover:underline',
+                  isDirect ? 'font-medium' : 'text-sm font-medium',
+                )}
+              >
+                {displayLabel}
+              </Link>
+            ) : (
+              <span className={cn('font-medium', !isDirect && 'text-sm')}>
+                {displayLabel}
+              </span>
+            )}
+            {node.circular && (
+              <Badge
+                variant="outline"
+                className="text-[10px] text-amber-700 dark:text-amber-400"
+              >
+                circular
+              </Badge>
+            )}
+          </div>
+          {displayLabel !== node.name && (
+            <p className="truncate text-xs text-muted-foreground">
+              {node.name}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {isDirect ? (
+              <>Included #{orderLabel}</>
+            ) : (
+              <>
+                Nested include
+                {node.children.length > 0 ? ' · also includes below' : ''}
+              </>
+            )}
+          </p>
         </div>
-        <AddSoftwareButton onAdd={onAdd} existingItems={items} />
-      </div>
-      <div className="px-4">
-        {items.length === 0 ? (
-          <p className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
-            No items. Use + to add software.
-          </p>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
+        {isDirect && !editDisabled && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+            aria-label={`Remove included manifest ${displayLabel}`}
+            onClick={() => onRemoveDirect(node.name)}
           >
-            <SortableContext
-              items={items}
-              strategy={verticalListSortingStrategy}
-            >
-              <div className="flex flex-col gap-1.5">
-                {items.map((item) => (
-                  <SortableItem
-                    key={item}
-                    id={item}
-                    badgeVariant={badgeVariant}
-                    rowAccent={rowAccent}
-                    onRemove={() => onRemove(item)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
+            <X className="h-4 w-4" />
+          </Button>
         )}
       </div>
-    </div>
-  )
-}
 
-function SortableItem({
-  id,
-  badgeVariant,
-  rowAccent,
-  onRemove,
-}: {
-  id: string
-  badgeVariant: 'outline' | 'destructive' | 'secondary' | 'default'
-  rowAccent: string
-  onRemove: () => void
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id,
-  })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        'flex items-center gap-2 rounded-md border px-2 py-1.5',
-        rowAccent,
+      {node.children.length > 0 && (
+        <div className="flex flex-col gap-2 border-l border-muted-foreground/20 pl-3">
+          {node.children.map((child) => (
+            <InclusionTreeBranch
+              key={`${node.name}>${child.name}`}
+              node={child}
+              depth={depth + 1}
+              manifestByName={manifestByName}
+              onRemoveDirect={onRemoveDirect}
+              editDisabled={editDisabled}
+            />
+          ))}
+        </div>
       )}
-    >
-      <button
-        type="button"
-        className="cursor-grab touch-none text-muted-foreground hover:text-foreground"
-        aria-label={`Reorder ${id}`}
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-      <SoftwareIcon name={id} size="sm" className="shrink-0" />
-      <Badge
-        variant={badgeVariant}
-        className="min-w-0 flex-1 justify-start truncate font-normal"
-      >
-        {id}
-      </Badge>
-      <button
-        type="button"
-        aria-label={`Remove ${id}`}
-        className="shrink-0 text-muted-foreground hover:text-destructive"
-        onClick={onRemove}
-      >
-        <X className="h-4 w-4" />
-      </button>
     </div>
-  )
-}
-
-function AddSoftwareButton({
-  onAdd,
-  existingItems,
-}: {
-  onAdd: (name: string) => void
-  existingItems: string[]
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-
-  const { data } = useQuery({
-    queryKey: ['pkginfo-search', search],
-    queryFn: () =>
-      api.get<PaginatedResponse<PkgInfoSummary>>(
-        `/pkginfo?page_size=40${search ? `&search=${encodeURIComponent(search)}` : ''}`,
-      ),
-    enabled: open,
-  })
-
-  const itemsByName = useMemo(() => {
-    const m = new Map<string, PkgInfoSummary>()
-    for (const item of data?.items ?? []) {
-      if (!m.has(item.name)) m.set(item.name, item)
-    }
-    return m
-  }, [data?.items])
-
-  const uniqueNames = [...itemsByName.keys()].filter(
-    (n) => !existingItems.includes(n),
-  )
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" aria-label="Add software">
-          <Plus className="h-4 w-4" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className={commandPopoverContentClass} align="end">
-        <Command shouldFilter={false} className={commandRootClass}>
-          <CommandInput
-            placeholder="Search software..."
-            value={search}
-            onValueChange={setSearch}
-          />
-          <CommandList className="max-h-[min(50vh,320px)]">
-            <CommandEmpty>No results.</CommandEmpty>
-            <CommandGroup>
-              {uniqueNames.map((name) => {
-                const pkg = itemsByName.get(name)
-                const title = pkg?.display_name?.trim() || name
-                const developer = pkg?.developer?.trim()
-                return (
-                  <CommandItem
-                    key={name}
-                    value={[name, pkg?.display_name, developer]
-                      .filter(Boolean)
-                      .join(' ')}
-                    onSelect={() => {
-                      onAdd(name)
-                      setOpen(false)
-                      setSearch('')
-                    }}
-                    className="gap-2"
-                  >
-                    <SoftwareIcon
-                      name={name}
-                      displayName={pkg?.display_name}
-                      size="sm"
-                      className="shrink-0"
-                    />
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate font-medium">{title}</span>
-                      {developer ? (
-                        <span className="truncate text-xs text-muted-foreground">
-                          {developer}
-                        </span>
-                      ) : (
-                        title !== name && (
-                          <span className="truncate text-xs text-muted-foreground">
-                            {name}
-                          </span>
-                        )
-                      )}
-                    </div>
-                  </CommandItem>
-                )
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
   )
 }
 
@@ -794,10 +881,12 @@ function AddManifestButton({
   onAdd,
   existingItems,
   currentManifestName,
+  disabled = false,
 }: {
   onAdd: (name: string) => void
   existingItems: string[]
   currentManifestName: string
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -814,7 +903,12 @@ function AddManifestButton({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" aria-label="Add included manifest">
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Add included manifest"
+          disabled={disabled}
+        >
           <Plus className="mr-1 h-4 w-4" />
           Include manifest
         </Button>
@@ -828,7 +922,7 @@ function AddManifestButton({
               {available.map((m) => (
                 <CommandItem
                   key={m.id}
-                  value={m.name}
+                  value={[m.name, m.display_name].filter(Boolean).join(' ')}
                   onSelect={() => {
                     onAdd(m.name)
                     setOpen(false)
@@ -841,7 +935,14 @@ function AddManifestButton({
                     )}
                     aria-hidden
                   />
-                  <span className="truncate">{m.name}</span>
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate">{manifestTitle(m)}</span>
+                    {manifestTitle(m) !== m.name && (
+                      <span className="truncate text-xs text-muted-foreground">
+                        {m.name}
+                      </span>
+                    )}
+                  </div>
                 </CommandItem>
               ))}
             </CommandGroup>

@@ -1,20 +1,33 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   ColumnDef,
+  RowSelectionState,
   SortingState,
   VisibilityState,
 } from '@tanstack/react-table'
-import { Package, Search, X } from 'lucide-react'
+import { Package, Search, Tags, X } from 'lucide-react'
 import Link from 'next/link'
 import { parseAsInteger, parseAsString, useQueryState } from 'nuqs'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
+import { useAuth } from '@/components/auth-provider'
 import { ColumnVisibilityMenu, DataTable } from '@/components/data-table'
 import { SoftwareIcon } from '@/components/software-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -26,10 +39,13 @@ import {
   api,
   type CatalogRead,
   type PaginatedResponse,
+  type PkgInfoBulkUpdateRequest,
+  type PkgInfoBulkUpdateResult,
   type PkgInfoSummary,
 } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { munkiAccents } from '@/lib/munki-accents'
+import { PAGE_KEYS } from '@/lib/page-keys'
 import { cn } from '@/lib/utils'
 
 const columns: ColumnDef<PkgInfoSummary>[] = [
@@ -157,13 +173,16 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   catalog_names: true,
   minimum_os_version: false,
   installer_type: false,
-  unattended_install: true,
+  unattended_install: false,
   unattended_uninstall: false,
   restart_action: false,
   updated_at: true,
 }
 
 export default function SoftwarePage() {
+  const { canWrite } = useAuth()
+  const canEditSoftware = canWrite(PAGE_KEYS.munkiSoftware)
+
   const [page, setPage] = useQueryState('page', parseAsInteger.withDefault(1))
   const [pageSize, setPageSize] = useQueryState(
     'pageSize',
@@ -187,6 +206,39 @@ export default function SoftwarePage() {
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
     DEFAULT_COLUMN_VISIBILITY,
   )
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
+  const [catalogsDialogOpen, setCatalogsDialogOpen] = useState(false)
+  const [bulkCategoryInput, setBulkCategoryInput] = useState('')
+  const [bulkCatalogNames, setBulkCatalogNames] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!canEditSoftware) setRowSelection({})
+  }, [canEditSoftware])
+
+  const queryClient = useQueryClient()
+
+  const selectedIds = useMemo(
+    () => Object.keys(rowSelection).filter((id) => rowSelection[id]),
+    [rowSelection],
+  )
+
+  const bulkMutation = useMutation({
+    mutationFn: (body: PkgInfoBulkUpdateRequest) =>
+      api.post<PkgInfoBulkUpdateResult>('/pkginfo/bulk-update', body),
+    onSuccess: (res) => {
+      toast.success(`Updated ${res.updated} item(s)`)
+      queryClient.invalidateQueries({ queryKey: ['pkginfo'] })
+      queryClient.invalidateQueries({ queryKey: ['pkginfo-categories'] })
+      queryClient.invalidateQueries({ queryKey: ['catalogs'] })
+      setRowSelection({})
+      setCategoryDialogOpen(false)
+      setCatalogsDialogOpen(false)
+      setBulkCategoryInput('')
+      setBulkCatalogNames([])
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
 
   const sortBy =
     sorting[0]?.id === 'display_name' ? 'name' : (sorting[0]?.id ?? 'name')
@@ -329,6 +381,171 @@ export default function SoftwarePage() {
         </div>
       </div>
 
+      {selectedIds.length > 0 && (
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm',
+            munkiAccents.software.pageTitle,
+          )}
+        >
+          <Tags
+            className="h-4 w-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+          <span className="font-medium tabular-nums">
+            {selectedIds.length} selected
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setBulkCategoryInput('')
+                setCategoryDialogOpen(true)
+              }}
+            >
+              Set category
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setBulkCatalogNames([])
+                setCatalogsDialogOpen(true)
+              }}
+            >
+              Set catalogs
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setRowSelection({})}
+            >
+              Clear selection
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={categoryDialogOpen} onOpenChange={setCategoryDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Set category</DialogTitle>
+            <DialogDescription>
+              Apply the same category to {selectedIds.length} selected item(s).
+              Leave empty and choose &quot;Clear category&quot; to remove the
+              category.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Label htmlFor="bulk-category">Category</Label>
+            <Input
+              id="bulk-category"
+              value={bulkCategoryInput}
+              onChange={(e) => setBulkCategoryInput(e.target.value)}
+              placeholder="e.g. Productivity"
+              list="software-category-suggestions"
+            />
+            <datalist id="software-category-suggestions">
+              {(categories ?? []).map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                bulkMutation.mutate({
+                  pkginfo_ids: selectedIds,
+                  category: null,
+                })
+              }
+              disabled={bulkMutation.isPending}
+            >
+              Clear category
+            </Button>
+            <Button
+              type="button"
+              onClick={() =>
+                bulkMutation.mutate({
+                  pkginfo_ids: selectedIds,
+                  category: bulkCategoryInput.trim() || null,
+                })
+              }
+              disabled={bulkMutation.isPending}
+            >
+              Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={catalogsDialogOpen} onOpenChange={setCatalogsDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Set catalogs</DialogTitle>
+            <DialogDescription>
+              Replace catalog membership for {selectedIds.length} selected
+              item(s) with the catalogs you choose below.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-64 space-y-2 overflow-y-auto py-2">
+            {(catalogs ?? [])
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((cat) => (
+                <label
+                  key={cat.id}
+                  className="flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-1.5 hover:bg-muted/60"
+                >
+                  <Checkbox
+                    checked={bulkCatalogNames.includes(cat.name)}
+                    onCheckedChange={(v) => {
+                      const on = !!v
+                      setBulkCatalogNames((prev) =>
+                        on
+                          ? prev.includes(cat.name)
+                            ? prev
+                            : [...prev, cat.name]
+                          : prev.filter((n) => n !== cat.name),
+                      )
+                    }}
+                  />
+                  <span className="text-sm">{cat.name}</span>
+                  {cat.is_production && (
+                    <Badge variant="secondary" className="ml-auto text-xs">
+                      Production
+                    </Badge>
+                  )}
+                </label>
+              ))}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCatalogsDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() =>
+                bulkMutation.mutate({
+                  pkginfo_ids: selectedIds,
+                  catalog_names: bulkCatalogNames,
+                })
+              }
+              disabled={bulkMutation.isPending}
+            >
+              Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="min-h-0 flex-1">
         <DataTable
           columns={columns}
@@ -352,6 +569,10 @@ export default function SoftwarePage() {
           columnVisibility={columnVisibility}
           onColumnVisibilityChange={setColumnVisibility}
           hideColumnPicker
+          enableRowSelection={canEditSoftware}
+          rowSelection={rowSelection}
+          onRowSelectionChange={setRowSelection}
+          getRowId={(row) => row.id}
         />
       </div>
     </div>

@@ -4,8 +4,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileText, Plus, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { useAuth } from '@/components/auth-provider'
 import { SoftwareNameAvatarCircles } from '@/components/software-avatar-circles'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -24,10 +25,18 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { api, type ManifestRead } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { parseManifestItemRef } from '@/lib/manifest-item-ref'
+import { manifestTitle, manifestTitleForName } from '@/lib/manifest-title'
 import { munkiAccents } from '@/lib/munki-accents'
+import { PAGE_KEYS } from '@/lib/page-keys'
 import { cn } from '@/lib/utils'
 
+const MANIFEST_CARD_AVATAR_MAX = 8
+
 export default function ManifestsPage() {
+  const { canWrite } = useAuth()
+  const canEditManifests = canWrite(PAGE_KEYS.munkiManifests)
+
   const queryClient = useQueryClient()
   const router = useRouter()
   const [createOpen, setCreateOpen] = useState(false)
@@ -47,7 +56,7 @@ export default function ManifestsPage() {
     mutationFn: (payload: { name: string; display_name?: string }) =>
       api.post<ManifestRead>('/manifests', payload),
     onSuccess: (created) => {
-      toast.success(`Manifest "${created.name}" created`)
+      toast.success(`Manifest "${manifestTitle(created)}" created`)
       queryClient.invalidateQueries({ queryKey: ['manifests'] })
       setCreateOpen(false)
       setName('')
@@ -66,6 +75,14 @@ export default function ManifestsPage() {
     },
     onError: (err: Error) => toast.error(`Failed to delete: ${err.message}`),
   })
+
+  const manifestByName = useMemo(() => {
+    const m = new Map<string, ManifestRead>()
+    for (const man of manifests ?? []) {
+      m.set(man.name, man)
+    }
+    return m
+  }, [manifests])
 
   const handleCreate = () => {
     const trimmed = name.trim()
@@ -96,12 +113,14 @@ export default function ManifestsPage() {
           Manifests
         </h1>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-1 h-4 w-4" />
-              New Manifest
-            </Button>
-          </DialogTrigger>
+          {canEditManifests ? (
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-1 h-4 w-4" />
+                New Manifest
+              </Button>
+            </DialogTrigger>
+          ) : null}
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create Manifest</DialogTitle>
@@ -161,7 +180,8 @@ export default function ManifestsPage() {
           <DialogHeader>
             <DialogTitle>Delete Manifest</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete &ldquo;{deleteManifest?.name}
+              Are you sure you want to delete &ldquo;
+              {deleteManifest ? manifestTitle(deleteManifest) : ''}
               &rdquo;? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
@@ -194,16 +214,26 @@ export default function ManifestsPage() {
             <Link
               href={`/manifests/${manifest.id}`}
               className="absolute inset-0 z-[1] cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              aria-label={`Edit manifest ${manifest.name}`}
+              aria-label={`Edit manifest ${manifestTitle(manifest)}`}
             />
             <CardHeader className="relative z-[2] pointer-events-none">
               <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <FileText
-                    className={cn('h-5 w-5', munkiAccents.manifests.icon)}
-                    aria-hidden
-                  />
-                  <span>{manifest.name}</span>
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <div className="flex items-center gap-3">
+                    <FileText
+                      className={cn(
+                        'h-5 w-5 shrink-0',
+                        munkiAccents.manifests.icon,
+                      )}
+                      aria-hidden
+                    />
+                    <span className="truncate">{manifestTitle(manifest)}</span>
+                  </div>
+                  {manifestTitle(manifest) !== manifest.name && (
+                    <span className="truncate pl-8 text-sm font-normal text-muted-foreground">
+                      {manifest.name}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {manifest.catalog_names.map((c) => (
@@ -211,16 +241,18 @@ export default function ManifestsPage() {
                       {c}
                     </Badge>
                   ))}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="pointer-events-auto h-8 w-8 text-muted-foreground hover:text-destructive"
-                    aria-label={`Delete ${manifest.name}`}
-                    onClick={() => setDeleteManifest(manifest)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {canEditManifests ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="pointer-events-auto h-8 w-8 text-muted-foreground hover:text-destructive"
+                      aria-label={`Delete ${manifestTitle(manifest)}`}
+                      onClick={() => setDeleteManifest(manifest)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  ) : null}
                 </div>
               </CardTitle>
             </CardHeader>
@@ -232,7 +264,10 @@ export default function ManifestsPage() {
                       Managed Installs
                     </h4>
                     <SoftwareNameAvatarCircles
-                      names={manifest.managed_installs}
+                      names={manifest.managed_installs.map(
+                        (n) => parseManifestItemRef(n).baseName,
+                      )}
+                      maxVisible={MANIFEST_CARD_AVATAR_MAX}
                       interactive={false}
                     />
                   </div>
@@ -244,7 +279,10 @@ export default function ManifestsPage() {
                       Managed Uninstalls
                     </h4>
                     <SoftwareNameAvatarCircles
-                      names={manifest.managed_uninstalls}
+                      names={manifest.managed_uninstalls.map(
+                        (n) => parseManifestItemRef(n).baseName,
+                      )}
+                      maxVisible={MANIFEST_CARD_AVATAR_MAX}
                       interactive={false}
                     />
                   </div>
@@ -256,7 +294,10 @@ export default function ManifestsPage() {
                       Optional Installs
                     </h4>
                     <SoftwareNameAvatarCircles
-                      names={manifest.optional_installs}
+                      names={manifest.optional_installs.map(
+                        (n) => parseManifestItemRef(n).baseName,
+                      )}
+                      maxVisible={MANIFEST_CARD_AVATAR_MAX}
                       interactive={false}
                     />
                   </div>
@@ -272,7 +313,7 @@ export default function ManifestsPage() {
                       <div className="flex flex-wrap gap-1">
                         {manifest.included_manifest_names.map((n) => (
                           <Badge key={n} variant="secondary">
-                            {n}
+                            {manifestTitleForName(manifestByName, n)}
                           </Badge>
                         ))}
                       </div>

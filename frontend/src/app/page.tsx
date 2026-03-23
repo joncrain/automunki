@@ -33,6 +33,7 @@ import {
   type PaginatedResponse,
 } from '@/lib/api'
 import { formatDate } from '@/lib/format'
+import { manifestTitle } from '@/lib/manifest-title'
 import {
   type MunkiAccentKey,
   munkiAccents,
@@ -275,9 +276,9 @@ export default function DashboardPage() {
                         >
                           <div className="min-w-0 flex-1">
                             <div className="truncate font-medium">
-                              {m.display_name ?? m.name}
+                              {manifestTitle(m)}
                             </div>
-                            {m.display_name ? (
+                            {manifestTitle(m) !== m.name ? (
                               <div className="truncate text-xs text-muted-foreground">
                                 {m.name}
                               </div>

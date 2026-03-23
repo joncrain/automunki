@@ -36,6 +36,12 @@ export function canTriggerRunRecipe(recipe: AutoPkgRecipeRead): boolean {
   )
 }
 
+/** What the quick-run dialog should trigger (single recipe, all enabled, or table multi-select). */
+export type RecipeQuickRunTarget =
+  | { mode: 'single'; recipe: AutoPkgRecipeRead }
+  | { mode: 'all' }
+  | { mode: 'selected'; recipes: AutoPkgRecipeRead[] }
+
 export const RUNNER_STORAGE_KEY = 'automunki.autopkg_runner'
 
 /** Safe for zsh/bash single-quoted strings */
@@ -99,16 +105,16 @@ export function LocalRunnerToastBody({ cmd }: { cmd: string }) {
 export function QuickRunDialog({
   open,
   onOpenChange,
-  recipe,
+  target,
   isPending,
   onConfirm,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** When null, triggers a run for all enabled recipes (``recipe_names`` omitted). */
-  recipe: AutoPkgRecipeRead | null
+  target: RecipeQuickRunTarget | null
   isPending: boolean
-  onConfirm: (runner: 'github' | 'local') => void
+  /** ``recipeNames`` null = all enabled recipes; otherwise explicit list for the run. */
+  onConfirm: (runner: 'github' | 'local', recipeNames: string[] | null) => void
 }) {
   const [runner, setRunner] = useState<'github' | 'local'>('github')
 
@@ -136,12 +142,26 @@ export function QuickRunDialog({
     }
   }, [open, uiSettings])
 
-  const singleBlocked = recipe !== null && !canTriggerRunRecipe(recipe)
+  const singleBlocked =
+    target?.mode === 'single' && !canTriggerRunRecipe(target.recipe)
+
+  const blockedInSelection =
+    target?.mode === 'selected'
+      ? target.recipes.filter((r) => !canTriggerRunRecipe(r))
+      : []
+
+  const cannotRun = singleBlocked || blockedInSelection.length > 0
 
   const handleRun = () => {
-    if (singleBlocked) return
+    if (!target || cannotRun) return
     localStorage.setItem(RUNNER_STORAGE_KEY, runner)
-    onConfirm(runner)
+    const recipeNames =
+      target.mode === 'all'
+        ? null
+        : target.mode === 'single'
+          ? [target.recipe.name]
+          : target.recipes.map((r) => r.name)
+    onConfirm(runner, recipeNames)
     onOpenChange(false)
   }
 
@@ -150,14 +170,24 @@ export function QuickRunDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {recipe ? `Run recipe: ${recipe.name}` : 'Run all enabled recipes'}
+            {target?.mode === 'single'
+              ? `Run recipe: ${target.recipe.name}`
+              : target?.mode === 'selected'
+                ? `Run ${target.recipes.length} selected recipe${target.recipes.length === 1 ? '' : 's'}`
+                : 'Run all enabled recipes'}
           </DialogTitle>
           <DialogDescription>
-            {recipe ? (
+            {target?.mode === 'single' ? (
               <>
                 Choose whether AutoPkg runs on GitHub Actions or locally on a
                 Mac (see{' '}
                 <code className="text-xs">docs/local-autopkg-runner.md</code>).
+              </>
+            ) : target?.mode === 'selected' ? (
+              <>
+                Runs only the recipes you selected in the table (not necessarily
+                every enabled recipe). Choose GitHub Actions or a local Mac
+                runner.
               </>
             ) : (
               <>
@@ -198,13 +228,29 @@ export function QuickRunDialog({
           </p>
         )}
 
+        {blockedInSelection.length > 0 && (
+          <p className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            Cannot run while selection includes recipes with failed or pending
+            trust:{' '}
+            <span className="font-medium">
+              {blockedInSelection.map((r) => r.name).join(', ')}
+            </span>
+          </p>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleRun} disabled={isPending || singleBlocked}>
+          <Button onClick={handleRun} disabled={isPending || cannotRun}>
             <Play className="mr-1 h-4 w-4" />
-            {isPending ? 'Starting…' : recipe ? 'Run' : 'Run all enabled'}
+            {isPending
+              ? 'Starting…'
+              : target?.mode === 'single'
+                ? 'Run'
+                : target?.mode === 'selected'
+                  ? `Run ${target.recipes.length} selected`
+                  : 'Run all enabled'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     #: Directory for UI software icons (PNG). Empty = auto-detect ``<repo>/frontend/public/icons``.
     ui_icons_directory: str = ""
 
+    #: User profile avatars. Empty = ``<repo>/backend/data/user-avatars``.
+    user_avatars_directory: str = ""
+
     api_public_url: str = ""
 
     #: Default AutoPkg execution target when the UI does not send ``runner``:
@@ -68,6 +71,27 @@ class Settings(BaseSettings):
     slack_webhook_url: str = ""
 
     cors_origins: list[str] = ["http://localhost:3000"]
+
+    #: ``disabled`` = dev bypass (full access, no login). ``jwt`` = local users only. ``oidc`` = OIDC + local.
+    auth_mode: Literal["disabled", "jwt", "oidc"] = "disabled"
+
+    #: When False, ``POST /auth/register`` returns 403 (use with ``auth_mode`` jwt or oidc).
+    auth_registration_open: bool = True
+
+    #: OIDC (used when ``auth_mode`` is ``oidc``)
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_authorization_endpoint: str = ""
+    oidc_token_endpoint: str = ""
+    oidc_userinfo_endpoint: str = ""
+    oidc_redirect_url: str = ""
+    #: Issuer string stored with ``oidc_sub`` (e.g. ``https://your-org.okta.com``).
+    oidc_issuer: str = ""
+    #: Space-separated OIDC scopes (e.g. ``openid email profile``).
+    oidc_scopes: str = "openid email profile"
+
+    #: Browser redirect target after OIDC login (must match IdP app registration).
+    public_app_url: str = "http://localhost:3000"
 
 
 settings = Settings()

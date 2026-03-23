@@ -13,11 +13,13 @@ from automunki.api.routes.catalogs import router as catalogs_router
 from automunki.api.routes.icons import router as icons_router
 from automunki.api.routes.manifests import router as manifests_router
 from automunki.api.routes.pkginfo import router as pkginfo_router
+from automunki.api.routes.rbac import router as rbac_router
 from automunki.api.routes.repo import router as repo_router
 from automunki.api.routes.reports import router as reports_router
 from automunki.api.routes.settings import router as settings_router
 from automunki.core.config import settings
 from automunki.core.middleware import RequestIDMiddleware
+from automunki.core.rbac_middleware import RBACMiddleware
 
 structlog.configure(
     processors=[
@@ -56,6 +58,7 @@ app = FastAPI(
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(RBACMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -67,6 +70,7 @@ app.add_middleware(
 api_prefix = "/api/v1"
 app.include_router(auth_router, prefix=api_prefix)
 app.include_router(users_router, prefix=api_prefix)
+app.include_router(rbac_router, prefix=api_prefix)
 app.include_router(pkginfo_router, prefix=api_prefix)
 app.include_router(icons_router, prefix=api_prefix)
 app.include_router(catalogs_router, prefix=api_prefix)

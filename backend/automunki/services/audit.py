@@ -3,6 +3,7 @@ from datetime import date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from automunki.core.audit_context import audit_user_email_ctx, audit_user_id_ctx
 from automunki.models.audit import AuditLog
 
 
@@ -39,6 +40,10 @@ async def create_audit_entry(
     user_agent: str | None = None,
     notes: str | None = None,
 ) -> AuditLog:
+    if user_id is None:
+        user_id = audit_user_id_ctx.get()
+    if user_email is None:
+        user_email = audit_user_email_ctx.get()
     entry = AuditLog(
         action=action,
         entity_type=entity_type,

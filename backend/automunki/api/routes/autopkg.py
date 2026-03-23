@@ -302,7 +302,7 @@ async def get_run_config(
         }
         if recipe.override_data:
             plist = dict(recipe.override_data)
-            trust = plist.get("ParentRecipeTrustInfo", {})
+            trust = plist.get("ParentRecipeTrustInfo") or {}
             trust.setdefault("parent_recipes", {})
             trust.setdefault("non_core_processors", {})
             if trust:
@@ -462,6 +462,73 @@ async def complete_run(
     return {"message": "Run completed", "run_id": str(run_id)}
 
 
+def _recipe_input_dict(recipe: AutoPkgRecipe) -> dict | None:
+    od = recipe.override_data
+    if isinstance(od, dict):
+        inner = od.get("Input")
+        if isinstance(inner, dict):
+            return inner
+    iv = recipe.input_variables
+    if isinstance(iv, dict):
+        return iv
+    return None
+
+
+def _recipe_pkginfo_key(recipe: AutoPkgRecipe) -> str:
+    inp = _recipe_input_dict(recipe)
+    if isinstance(inp, dict):
+        n = inp.get("NAME")
+        if isinstance(n, str) and n.strip():
+            return n.strip()
+    return recipe.name
+
+
+async def _batch_pkginfo_labels(session: AsyncSession, names: list[str]) -> dict[str, tuple[str | None, str | None]]:
+    """Latest ``PkgInfo`` row per ``name`` (by ``updated_at``) for display/icon labels."""
+    if not names:
+        return {}
+    result = await session.execute(
+        select(PkgInfo).where(
+            PkgInfo.is_deleted.is_(False),
+            PkgInfo.name.in_(names),
+        )
+    )
+    rows = result.scalars().all()
+    best: dict[str, PkgInfo] = {}
+    for p in rows:
+        cur = best.get(p.name)
+        if cur is None:
+            best[p.name] = p
+            continue
+        if p.updated_at is None:
+            continue
+        if cur.updated_at is None or p.updated_at > cur.updated_at:
+            best[p.name] = p
+    out: dict[str, tuple[str | None, str | None]] = {}
+    for name, pkg in best.items():
+        dn = pkg.display_name.strip() if pkg.display_name and pkg.display_name.strip() else None
+        ic = pkg.icon_name.strip() if pkg.icon_name and pkg.icon_name.strip() else None
+        out[name] = (dn, ic)
+    return out
+
+
+def _enrich_recipe_read(
+    recipe: AutoPkgRecipe,
+    labels: dict[str, tuple[str | None, str | None]],
+) -> AutoPkgRecipeRead:
+    key = _recipe_pkginfo_key(recipe)
+    pair = labels.get(key)
+    base = AutoPkgRecipeRead.model_validate(recipe)
+    if pair is None:
+        return base.model_copy(update={"pkginfo_display_name": None, "pkginfo_icon_name": None})
+    return base.model_copy(
+        update={
+            "pkginfo_display_name": pair[0],
+            "pkginfo_icon_name": pair[1],
+        }
+    )
+
+
 @router.get("/recipes", response_model=list[AutoPkgRecipeRead])
 async def list_recipes(
     session: AsyncSession = Depends(get_session),
@@ -471,7 +538,10 @@ async def list_recipes(
     if enabled_only:
         query = query.where(AutoPkgRecipe.is_enabled.is_(True))
     result = await session.execute(query)
-    return [AutoPkgRecipeRead.model_validate(r) for r in result.scalars().all()]
+    recipes = result.scalars().all()
+    keys = list({_recipe_pkginfo_key(r) for r in recipes})
+    labels = await _batch_pkginfo_labels(session, keys)
+    return [_enrich_recipe_read(r, labels) for r in recipes]
 
 
 @router.post("/recipes", response_model=AutoPkgRecipeRead)
@@ -783,7 +853,10 @@ async def list_trust_status(
     if status:
         query = query.where(AutoPkgRecipe.trust_status == status)
     result = await session.execute(query)
-    return [AutoPkgRecipeRead.model_validate(r) for r in result.scalars().all()]
+    recipes = result.scalars().all()
+    keys = list({_recipe_pkginfo_key(r) for r in recipes})
+    labels = await _batch_pkginfo_labels(session, keys)
+    return [_enrich_recipe_read(r, labels) for r in recipes]
 
 
 @router.post("/recipes/{recipe_id}/verify-trust")
@@ -893,6 +966,12 @@ async def update_recipe_trust(
     recipe.trust_approved_by = user.email if user else "system"
     recipe.trust_approved_at = datetime.now(UTC)
 
+    plist_trust = _plist_trust_snippet_from_db_trust(new_trust)
+    if recipe.override_data is not None:
+        od = dict(recipe.override_data)
+        od["ParentRecipeTrustInfo"] = plist_trust
+        recipe.override_data = od
+
     await create_audit_entry(
         session,
         action="update_trust",
@@ -947,10 +1026,16 @@ async def approve_recipe_trust(
         change_request.reviewed_at = now
         change_request.comment = data.comment
 
-        recipe.trust_info = change_request.new_trust_info
+        new_trust = change_request.new_trust_info
+        recipe.trust_info = new_trust
         recipe.trust_status = "verified"
         recipe.trust_approved_by = reviewer
         recipe.trust_approved_at = now
+        plist_trust = _plist_trust_snippet_from_db_trust(new_trust)
+        if recipe.override_data is not None:
+            od = dict(recipe.override_data)
+            od["ParentRecipeTrustInfo"] = plist_trust
+            recipe.override_data = od
     else:
         change_request.status = "rejected"
         change_request.reviewed_by = reviewer

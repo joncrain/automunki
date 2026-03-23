@@ -21,3 +21,5 @@ agent/payload/
 .ruff_cache/
 .venv/
 metadata_cache_response.json
+infra/
+backend/data/user-avatars/

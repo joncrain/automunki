@@ -1,7 +1,65 @@
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+
+
+def _normalize_conditional_items_root(v: object) -> object:
+    if v is None or v == []:
+        return None
+    if isinstance(v, dict):
+        return None
+    if isinstance(v, list):
+        return v
+    return None
+
+
+class ConditionalItemBlock(BaseModel):
+    """One entry in a manifest's conditional_items array (Munki wiki: Conditional Items)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    condition: str
+    managed_installs: list[str] | None = None
+    managed_uninstalls: list[str] | None = None
+    managed_updates: list[str] | None = None
+    optional_installs: list[str] | None = None
+    featured_items: list[str] | None = None
+    default_installs: list[str] | None = None
+    included_manifests: list[str] | None = None
+    conditional_items: list["ConditionalItemBlock"] | None = None
+
+    @field_validator("condition", mode="before")
+    @classmethod
+    def _strip_condition(cls, v: object) -> str:
+        if not isinstance(v, str):
+            raise TypeError("condition must be a string")
+        return v.strip()
+
+    @field_validator("condition")
+    @classmethod
+    def _condition_nonempty(cls, v: str) -> str:
+        if not v:
+            raise ValueError("condition must not be empty")
+        return v
+
+
+ConditionalItemBlock.model_rebuild()
+
+ConditionalItemsField = Annotated[
+    list[ConditionalItemBlock] | None,
+    BeforeValidator(_normalize_conditional_items_root),
+]
+
+
+def conditional_items_for_storage(
+    blocks: list[ConditionalItemBlock] | None,
+) -> list | None:
+    """Serialize conditional blocks for JSONB (omit null/empty keys)."""
+    if not blocks:
+        return None
+    return [b.model_dump(mode="python", exclude_none=True) for b in blocks]
 
 
 class CatalogBase(BaseModel):
@@ -136,6 +194,7 @@ class PkgInfoSummary(BaseModel):
     id: UUID
     name: str
     display_name: str | None = None
+    icon_name: str | None = None
     version: str
     category: str | None = None
     developer: str | None = None
@@ -153,6 +212,18 @@ class PkgInfoSummary(BaseModel):
 
 class CatalogAssignment(BaseModel):
     catalog_names: list[str]
+
+
+class PkgInfoBulkUpdate(BaseModel):
+    """Bulk-update category and/or catalog membership for many pkginfo rows."""
+
+    pkginfo_ids: list[UUID] = Field(..., min_length=1, max_length=500)
+    category: str | None = None
+    catalog_names: list[str] | None = None
+
+
+class PkgInfoBulkUpdateResult(BaseModel):
+    updated: int
 
 
 class PromoteRequest(BaseModel):
@@ -180,7 +251,7 @@ class ManifestBase(BaseModel):
     name: str
     display_name: str | None = None
     notes: str | None = None
-    conditional_items: dict | None = None
+    conditional_items: ConditionalItemsField = None
 
 
 class ManifestCreate(ManifestBase):
@@ -195,9 +266,10 @@ class ManifestCreate(ManifestBase):
 
 
 class ManifestUpdate(BaseModel):
+    name: str | None = None
     display_name: str | None = None
     notes: str | None = None
-    conditional_items: dict | None = None
+    conditional_items: ConditionalItemsField = None
     catalog_names: list[str] | None = None
     managed_installs: list[str] | None = None
     managed_uninstalls: list[str] | None = None

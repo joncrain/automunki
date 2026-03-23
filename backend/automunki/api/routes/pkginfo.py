@@ -14,6 +14,8 @@ from automunki.models.user import User
 from automunki.schemas.common import PaginatedResponse
 from automunki.schemas.munki import (
     CatalogAssignment,
+    PkgInfoBulkUpdate,
+    PkgInfoBulkUpdateResult,
     PkgInfoRead,
     PkgInfoSummary,
     PkgInfoUpdate,
@@ -33,6 +35,7 @@ def _to_summary(pkg: PkgInfo) -> dict:
         "id": pkg.id,
         "name": pkg.name,
         "display_name": pkg.display_name,
+        "icon_name": pkg.icon_name,
         "version": pkg.version,
         "category": pkg.category,
         "developer": pkg.developer,
@@ -155,6 +158,74 @@ async def list_categories(
         .order_by(PkgInfo.category)
     )
     return [row[0] for row in result.all()]
+
+
+@router.post("/bulk-update", response_model=PkgInfoBulkUpdateResult)
+async def bulk_update_pkginfo(
+    data: PkgInfoBulkUpdate,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_optional_user),
+):
+    """Apply the same category and/or catalog list to many pkginfo records."""
+    payload = data.model_dump(exclude_unset=True)
+    pkginfo_ids = payload.pop("pkginfo_ids")
+    if not payload:
+        raise HTTPException(
+            status_code=400,
+            detail="Include at least one of: category, catalog_names",
+        )
+
+    updated = 0
+    for pkg_id in pkginfo_ids:
+        result = await session.execute(
+            select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id)
+        )
+        pkg = result.scalar_one_or_none()
+        if not pkg or pkg.is_deleted:
+            continue
+
+        before = _to_read(pkg)
+        before_names = [c.name for c in pkg.catalogs]
+        changes: dict = {}
+
+        if "category" in payload:
+            pkg.category = payload["category"]
+            changes["category"] = {"before": before.get("category"), "after": payload["category"]}
+
+        if "catalog_names" in payload:
+            names = payload["catalog_names"]
+            await session.execute(PkgInfoCatalog.__table__.delete().where(PkgInfoCatalog.pkg_info_id == pkg_id))
+            await session.flush()
+            for cat_name in names:
+                cat_result = await session.execute(select(Catalog).where(Catalog.name == cat_name))
+                cat = cat_result.scalar_one_or_none()
+                if cat:
+                    session.add(PkgInfoCatalog(pkg_info_id=pkg_id, catalog_id=cat.id))
+            await session.flush()
+            changes["catalog_names"] = {"before": before_names, "after": names}
+
+        reload = await session.execute(
+            select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id)
+        )
+        pkg = reload.scalar_one()
+        after = _to_read(pkg)
+
+        await create_audit_entry(
+            session,
+            action="update",
+            entity_type="pkg_info",
+            entity_id=str(pkg_id),
+            entity_name=f"{pkg.name} {pkg.version}",
+            user_id=user.id if user else None,
+            user_email=user.email if user else None,
+            before_snapshot=before,
+            after_snapshot=after,
+            changes=changes,
+        )
+        updated += 1
+
+    await session.commit()
+    return PkgInfoBulkUpdateResult(updated=updated)
 
 
 @router.get("/{pkg_id}", response_model=PkgInfoRead)

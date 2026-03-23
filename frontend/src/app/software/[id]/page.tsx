@@ -20,6 +20,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { useAuth } from '@/components/auth-provider'
 import { DataTable } from '@/components/data-table'
 import { PkginfoIconUpload } from '@/components/pkginfo-icon-upload'
 import { SoftwareInstallTimelineChart } from '@/components/reporting/software-install-timeline-chart'
@@ -74,6 +75,7 @@ import {
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { munkiAccents } from '@/lib/munki-accents'
+import { PAGE_KEYS } from '@/lib/page-keys'
 import { cn } from '@/lib/utils'
 
 function softwareInstallReportStatusVariant(status: string) {
@@ -293,6 +295,14 @@ export default function SoftwareDetailPage() {
   const [installReportPage, setInstallReportPage] = useState(1)
   const [installReportPageSize, setInstallReportPageSize] = useState(25)
 
+  const { canWrite } = useAuth()
+  const canMutateSoftware = canWrite(PAGE_KEYS.munkiSoftware)
+  const effectiveEditing = editing && canMutateSoftware
+
+  useEffect(() => {
+    if (!canMutateSoftware) setEditing(false)
+  }, [canMutateSoftware])
+
   const { data: pkg, isLoading } = useQuery({
     queryKey: ['pkginfo', id],
     queryFn: () => api.get<PkgInfoDetail>(`/pkginfo/${id}`),
@@ -339,6 +349,8 @@ export default function SoftwareDetailPage() {
     onSuccess: () => {
       toast.success('Changes saved')
       queryClient.invalidateQueries({ queryKey: ['pkginfo', id] })
+      queryClient.invalidateQueries({ queryKey: ['pkginfo-item-meta'] })
+      queryClient.invalidateQueries({ queryKey: ['pkginfo-display-labels'] })
       setEditing(false)
       setDirty(false)
     },
@@ -458,7 +470,11 @@ export default function SoftwareDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <CatalogEditor pkgId={id} catalogNames={pkg.catalog_names} />
+          <CatalogEditor
+            pkgId={id}
+            catalogNames={pkg.catalog_names}
+            readOnly={!canMutateSoftware}
+          />
           <Button
             variant="outline"
             size="sm"
@@ -468,7 +484,7 @@ export default function SoftwareDetailPage() {
             <Download className="mr-1 h-4 w-4" />
             Plist
           </Button>
-          {editing ? (
+          {canMutateSoftware && effectiveEditing ? (
             <>
               <Button
                 size="sm"
@@ -483,7 +499,7 @@ export default function SoftwareDetailPage() {
                 Cancel
               </Button>
             </>
-          ) : (
+          ) : canMutateSoftware ? (
             <Button
               variant="outline"
               size="sm"
@@ -492,7 +508,7 @@ export default function SoftwareDetailPage() {
               <Pencil className="mr-1 h-4 w-4" />
               Edit
             </Button>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -573,23 +589,23 @@ export default function SoftwareDetailPage() {
                 <EditableField
                   label="Display Name"
                   value={form?.display_name ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('display_name', v)}
                 />
                 <ReadOnlyField label="Version" value={pkg.version} />
                 <EditableField
                   label="Category"
                   value={form?.category ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('category', v)}
                 />
                 <EditableField
                   label="Developer"
                   value={form?.developer ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('developer', v)}
                 />
-                {editing ? (
+                {effectiveEditing ? (
                   <div className="space-y-2">
                     <Label htmlFor="edit-icon_name">Icon Name</Label>
                     <p className="text-xs text-muted-foreground">
@@ -624,7 +640,7 @@ export default function SoftwareDetailPage() {
                     value={pkg.icon_name || '—'}
                   />
                 )}
-                {editing ? (
+                {effectiveEditing ? (
                   <div className="col-span-full">
                     <Label>Description</Label>
                     <Textarea
@@ -644,7 +660,7 @@ export default function SoftwareDetailPage() {
                     <p className="mt-1">{pkg.description || '—'}</p>
                   </div>
                 )}
-                {editing ? (
+                {effectiveEditing ? (
                   <div className="col-span-full">
                     <Label>Notes</Label>
                     <Textarea
@@ -667,19 +683,19 @@ export default function SoftwareDetailPage() {
                 <EditableField
                   label="Minimum OS"
                   value={form?.minimum_os_version ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('minimum_os_version', v)}
                 />
                 <EditableField
                   label="Maximum OS"
                   value={form?.maximum_os_version ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('maximum_os_version', v)}
                 />
                 <EditableField
                   label="Minimum Munki Version"
                   value={form?.minimum_munki_version ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('minimum_munki_version', v)}
                 />
               </CardContent>
@@ -693,40 +709,40 @@ export default function SoftwareDetailPage() {
                 <BooleanField
                   label="Unattended Install"
                   value={form?.unattended_install ?? false}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('unattended_install', v)}
                 />
                 <BooleanField
                   label="Unattended Uninstall"
                   value={form?.unattended_uninstall ?? false}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('unattended_uninstall', v)}
                 />
                 <BooleanField
                   label="Auto Remove"
                   value={form?.autoremove ?? false}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('autoremove', v)}
                 />
                 <BooleanField
                   label="Uninstallable"
                   value={form?.uninstallable ?? true}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('uninstallable', v)}
                 />
                 <BooleanField
                   label="OnDemand"
                   value={form?.on_demand ?? false}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('on_demand', v)}
                 />
                 <BooleanField
                   label="Apple Item"
                   value={form?.apple_item ?? false}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('apple_item', v)}
                 />
-                {editing ? (
+                {effectiveEditing ? (
                   <div>
                     <Label>Restart Action</Label>
                     <Select
@@ -761,11 +777,11 @@ export default function SoftwareDetailPage() {
                     value={pkg.restart_action}
                   />
                 )}
-                {editing ? (
+                {effectiveEditing ? (
                   <EditableField
                     label="Uninstall Method"
                     value={form?.uninstall_method ?? ''}
-                    editing={editing}
+                    editing={effectiveEditing}
                     onChange={(v) => updateField('uninstall_method', v)}
                   />
                 ) : (
@@ -774,11 +790,11 @@ export default function SoftwareDetailPage() {
                     value={pkg.uninstall_method}
                   />
                 )}
-                {editing ? (
+                {effectiveEditing ? (
                   <EditableField
                     label="Installer Type"
                     value={form?.installer_type ?? ''}
-                    editing={editing}
+                    editing={effectiveEditing}
                     onChange={(v) => updateField('installer_type', v)}
                   />
                 ) : (
@@ -790,13 +806,13 @@ export default function SoftwareDetailPage() {
                 <EditableField
                   label="Force Install After Date"
                   value={form?.force_install_after_date ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('force_install_after_date', v)}
                 />
                 <EditableField
                   label="Installable Condition"
                   value={form?.installable_condition ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('installable_condition', v)}
                 />
               </CardContent>
@@ -807,7 +823,7 @@ export default function SoftwareDetailPage() {
                 <CardTitle>Dependencies &amp; Relationships</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {editing ? (
+                {effectiveEditing ? (
                   <>
                     <TagField
                       label="Blocking Applications"
@@ -861,7 +877,7 @@ export default function SoftwareDetailPage() {
                 <CardTitle>Installs Items</CardTitle>
               </CardHeader>
               <CardContent>
-                {editing ? (
+                {effectiveEditing ? (
                   <InstallsEditor
                     items={form?.installs ?? []}
                     onChange={(v) => updateField('installs', v)}
@@ -920,7 +936,7 @@ export default function SoftwareDetailPage() {
                 <CardTitle>Receipts</CardTitle>
               </CardHeader>
               <CardContent>
-                {editing ? (
+                {effectiveEditing ? (
                   <ReceiptsEditor
                     items={form?.receipts ?? []}
                     onChange={(v) => updateField('receipts', v)}
@@ -966,33 +982,33 @@ export default function SoftwareDetailPage() {
                 <ScriptField
                   label="installcheck_script"
                   value={
-                    editing
+                    effectiveEditing
                       ? (form?.installcheck_script ?? '')
                       : (pkg.installcheck_script ?? '')
                   }
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('installcheck_script', v)}
                   description="Runs before install to determine if the item needs to be installed. Exit 0 = needs install."
                 />
                 <ScriptField
                   label="uninstallcheck_script"
                   value={
-                    editing
+                    effectiveEditing
                       ? (form?.uninstallcheck_script ?? '')
                       : (pkg.uninstallcheck_script ?? '')
                   }
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('uninstallcheck_script', v)}
                   description="Runs before uninstall to determine if the item is installed. Exit 0 = is installed."
                 />
                 <ScriptField
                   label="version_script"
                   value={
-                    editing
+                    effectiveEditing
                       ? (form?.version_script ?? '')
                       : (pkg.version_script ?? '')
                   }
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('version_script', v)}
                   description="Outputs the installed version to stdout for comparison."
                 />
@@ -1036,19 +1052,19 @@ export default function SoftwareDetailPage() {
                 <EditableField
                   label="Package Path"
                   value={form?.package_path ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('package_path', v)}
                 />
                 <EditableField
                   label="Package Complete URL"
                   value={form?.package_complete_url ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('package_complete_url', v)}
                 />
                 <EditableField
                   label="Uninstaller Item Location"
                   value={form?.uninstaller_item_location ?? ''}
-                  editing={editing}
+                  editing={effectiveEditing}
                   onChange={(v) => updateField('uninstaller_item_location', v)}
                 />
               </CardContent>
@@ -1059,7 +1075,7 @@ export default function SoftwareDetailPage() {
                 <CardTitle>Items to Copy</CardTitle>
               </CardHeader>
               <CardContent>
-                {editing ? (
+                {effectiveEditing ? (
                   <ItemsToCopyEditor
                     items={form?.items_to_copy ?? []}
                     onChange={(v) => updateField('items_to_copy', v)}
@@ -1110,44 +1126,44 @@ export default function SoftwareDetailPage() {
           <ScriptField
             label="preinstall_script"
             value={
-              editing
+              effectiveEditing
                 ? (form?.preinstall_script ?? '')
                 : (pkg.preinstall_script ?? '')
             }
-            editing={editing}
+            editing={effectiveEditing}
             onChange={(v) => updateField('preinstall_script', v)}
           />
           <ScriptField
             label="postinstall_script"
             value={
-              editing
+              effectiveEditing
                 ? (form?.postinstall_script ?? '')
                 : (pkg.postinstall_script ?? '')
             }
-            editing={editing}
+            editing={effectiveEditing}
             onChange={(v) => updateField('postinstall_script', v)}
           />
           <ScriptField
             label="preuninstall_script"
             value={
-              editing
+              effectiveEditing
                 ? (form?.preuninstall_script ?? '')
                 : (pkg.preuninstall_script ?? '')
             }
-            editing={editing}
+            editing={effectiveEditing}
             onChange={(v) => updateField('preuninstall_script', v)}
           />
           <ScriptField
             label="postuninstall_script"
             value={
-              editing
+              effectiveEditing
                 ? (form?.postuninstall_script ?? '')
                 : (pkg.postuninstall_script ?? '')
             }
-            editing={editing}
+            editing={effectiveEditing}
             onChange={(v) => updateField('postuninstall_script', v)}
           />
-          {!editing &&
+          {!effectiveEditing &&
             !pkg.preinstall_script &&
             !pkg.postinstall_script &&
             !pkg.preuninstall_script &&
@@ -1846,9 +1862,11 @@ function ItemsToCopyEditor({
 function CatalogEditor({
   pkgId,
   catalogNames,
+  readOnly = false,
 }: {
   pkgId: string
   catalogNames: string[]
+  readOnly?: boolean
 }) {
   const queryClient = useQueryClient()
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -1884,6 +1902,22 @@ function CatalogEditor({
   const available = (allCatalogs ?? []).filter(
     (c) => !catalogNames.includes(c.name),
   )
+
+  if (readOnly) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        {catalogNames.length ? (
+          catalogNames.map((c) => (
+            <Badge key={c} variant="secondary" className="text-sm">
+              {c}
+            </Badge>
+          ))
+        ) : (
+          <span className="text-sm text-muted-foreground">—</span>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-center gap-1.5">

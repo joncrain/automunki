@@ -1,14 +1,8 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
-import { Suspense } from 'react'
 import './globals.css'
-import { AppSidebar } from '@/components/app-sidebar'
+import { AppShell } from '@/components/app-shell'
 import { Providers } from '@/components/providers'
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from '@/components/ui/sidebar'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -36,22 +30,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Providers>
-          <SidebarProvider>
-            <AppSidebar />
-            <SidebarInset>
-              <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4 md:hidden">
-                <SidebarTrigger />
-                <span className="font-semibold">AutoMunki</span>
-              </header>
-              <main className="min-w-0 flex-1 overflow-auto">
-                <Suspense>
-                  <div className="container mx-auto min-w-0 max-w-full p-6">
-                    {children}
-                  </div>
-                </Suspense>
-              </main>
-            </SidebarInset>
-          </SidebarProvider>
+          <AppShell>{children}</AppShell>
         </Providers>
       </body>
     </html>

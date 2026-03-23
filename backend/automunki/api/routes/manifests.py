@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,7 +16,12 @@ from automunki.models.munki import (
     ManifestItem,
 )
 from automunki.models.user import User
-from automunki.schemas.munki import ManifestCreate, ManifestRead, ManifestUpdate
+from automunki.schemas.munki import (
+    ManifestCreate,
+    ManifestRead,
+    ManifestUpdate,
+    conditional_items_for_storage,
+)
 from automunki.services.audit import create_audit_entry
 from automunki.services.munki import compile_manifest_plist
 
@@ -57,9 +62,7 @@ async def _load_manifest(session: AsyncSession, manifest_id: uuid.UUID):
         .options(
             selectinload(Manifest.catalog_refs).selectinload(ManifestCatalog.catalog),
             selectinload(Manifest.items),
-            selectinload(Manifest.included_manifests).selectinload(
-                ManifestInclusion.child
-            ),
+            selectinload(Manifest.included_manifests).selectinload(ManifestInclusion.child),
         )
         .where(Manifest.id == manifest_id)
     )
@@ -73,9 +76,7 @@ async def list_manifests(session: AsyncSession = Depends(get_session)):
         .options(
             selectinload(Manifest.catalog_refs).selectinload(ManifestCatalog.catalog),
             selectinload(Manifest.items),
-            selectinload(Manifest.included_manifests).selectinload(
-                ManifestInclusion.child
-            ),
+            selectinload(Manifest.included_manifests).selectinload(ManifestInclusion.child),
         )
         .order_by(Manifest.name)
     )
@@ -119,7 +120,7 @@ async def create_manifest(
         name=data.name,
         display_name=data.display_name,
         notes=data.notes,
-        conditional_items=data.conditional_items,
+        conditional_items=conditional_items_for_storage(data.conditional_items),
     )
     session.add(manifest)
     await session.flush()
@@ -155,12 +156,27 @@ async def update_manifest(
 
     before = _manifest_to_read(m)
 
-    if data.display_name is not None:
+    patch = data.model_dump(exclude_unset=True)
+
+    if "name" in patch:
+        new_name = (data.name or "").strip()
+        if not new_name:
+            raise HTTPException(status_code=422, detail="Manifest name cannot be empty")
+        if new_name != m.name:
+            existing = await session.execute(select(Manifest).where(Manifest.name == new_name))
+            other = existing.scalar_one_or_none()
+            if other is not None and other.id != m.id:
+                raise HTTPException(status_code=409, detail="Manifest name already exists")
+            m.name = new_name
+
+    if "display_name" in patch:
         m.display_name = data.display_name
-    if data.notes is not None:
+
+    if "notes" in patch:
         m.notes = data.notes
-    if data.conditional_items is not None:
-        m.conditional_items = data.conditional_items
+
+    if "conditional_items" in patch:
+        m.conditional_items = conditional_items_for_storage(data.conditional_items)
 
     await _sync_manifest_relations(session, m, data)
 
@@ -209,14 +225,11 @@ async def delete_manifest(
 async def _sync_manifest_relations(session, manifest, data):
     """Sync catalog refs, items, and inclusions from create/update data."""
     if hasattr(data, "catalog_names") and data.catalog_names is not None:
-        for cr in list(manifest.catalog_refs):
-            await session.delete(cr)
+        await session.execute(delete(ManifestCatalog).where(ManifestCatalog.manifest_id == manifest.id))
         await session.flush()
 
         for i, cat_name in enumerate(data.catalog_names):
-            cat_result = await session.execute(
-                select(Catalog).where(Catalog.name == cat_name)
-            )
+            cat_result = await session.execute(select(Catalog).where(Catalog.name == cat_name))
             cat = cat_result.scalar_one_or_none()
             if cat:
                 session.add(
@@ -236,14 +249,17 @@ async def _sync_manifest_relations(session, manifest, data):
         "default_installs": ItemType.default_installs,
     }
 
-    has_item_updates = any(
-        getattr(data, field, None) is not None for field in item_type_fields
-    )
+    has_item_updates = any(getattr(data, field, None) is not None for field in item_type_fields)
 
     if has_item_updates:
-        for item in list(manifest.items):
-            if getattr(data, item.item_type.value, None) is not None:
-                await session.delete(item)
+        for field_name, item_type in item_type_fields.items():
+            if getattr(data, field_name, None) is not None:
+                await session.execute(
+                    delete(ManifestItem).where(
+                        ManifestItem.manifest_id == manifest.id,
+                        ManifestItem.item_type == item_type,
+                    )
+                )
         await session.flush()
 
         for field_name, item_type in item_type_fields.items():
@@ -261,14 +277,11 @@ async def _sync_manifest_relations(session, manifest, data):
 
     included_names = getattr(data, "included_manifest_names", None)
     if included_names is not None:
-        for inc in list(manifest.included_manifests):
-            await session.delete(inc)
+        await session.execute(delete(ManifestInclusion).where(ManifestInclusion.parent_manifest_id == manifest.id))
         await session.flush()
 
         for i, inc_name in enumerate(included_names):
-            inc_result = await session.execute(
-                select(Manifest).where(Manifest.name == inc_name)
-            )
+            inc_result = await session.execute(select(Manifest).where(Manifest.name == inc_name))
             inc_manifest = inc_result.scalar_one_or_none()
             if inc_manifest:
                 session.add(

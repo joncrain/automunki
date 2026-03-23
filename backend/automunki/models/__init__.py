@@ -17,6 +17,7 @@ from automunki.models.munki import (
     PkgInfoCatalog,
     PromotionRule,
 )
+from automunki.models.rbac import AccessLevel, Role, RolePermission, UserRoleMembership
 from automunki.models.user import User
 
 __all__ = [
@@ -38,4 +39,8 @@ __all__ = [
     "PkgInfoCatalog",
     "PromotionRule",
     "User",
+    "AccessLevel",
+    "Role",
+    "RolePermission",
+    "UserRoleMembership",
 ]

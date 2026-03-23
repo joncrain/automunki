@@ -138,7 +138,7 @@ class Manifest(UUIDMixin, Base):
 
     name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     display_name: Mapped[str | None] = mapped_column(Text)
-    conditional_items: Mapped[dict | None] = mapped_column(JSONB)
+    conditional_items: Mapped[list | None] = mapped_column(JSONB)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

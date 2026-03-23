@@ -16,6 +16,7 @@ import {
 import { parseAsString, useQueryState } from 'nuqs'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { useAuth } from '@/components/auth-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -43,9 +44,14 @@ import {
   type SearchedRecipe,
 } from '@/lib/api'
 import { munkiAccents } from '@/lib/munki-accents'
+import { PAGE_KEYS } from '@/lib/page-keys'
 import { cn } from '@/lib/utils'
 
 export default function DiscoverRecipesPage() {
+  const { canWrite } = useAuth()
+  const canMutateDiscover = canWrite(PAGE_KEYS.autopkgDiscover)
+  const canAddRecipes = canWrite(PAGE_KEYS.autopkgRecipes)
+
   const [search, setSearch] = useQueryState(
     'search',
     parseAsString.withDefault(''),
@@ -239,40 +245,42 @@ export default function DiscoverRecipesPage() {
           </span>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isMutatingRepos}
-            onClick={() => syncReposMutation.mutate()}
-          >
-            <RefreshCw
-              className={`mr-1 h-4 w-4 ${syncReposMutation.isPending ? 'animate-spin' : ''}`}
-            />
-            Sync Repos
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isMutatingRepos || allRepos.length === 0}
-            onClick={() => syncRecipesMutation.mutate()}
-          >
-            <RefreshCw
-              className={`mr-1 h-4 w-4 ${syncRecipesMutation.isPending ? 'animate-spin' : ''}`}
-            />
-            Sync All Recipes
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={isMutatingRepos}
-            onClick={() => setAddRepoDialogOpen(true)}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            Add external repo
-          </Button>
-        </div>
+        {canMutateDiscover ? (
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isMutatingRepos}
+              onClick={() => syncReposMutation.mutate()}
+            >
+              <RefreshCw
+                className={`mr-1 h-4 w-4 ${syncReposMutation.isPending ? 'animate-spin' : ''}`}
+              />
+              Sync Repos
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isMutatingRepos || allRepos.length === 0}
+              onClick={() => syncRecipesMutation.mutate()}
+            >
+              <RefreshCw
+                className={`mr-1 h-4 w-4 ${syncRecipesMutation.isPending ? 'animate-spin' : ''}`}
+              />
+              Sync All Recipes
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={isMutatingRepos}
+              onClick={() => setAddRepoDialogOpen(true)}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              Add external repo
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <Dialog
@@ -348,19 +356,21 @@ export default function DiscoverRecipesPage() {
           <BookOpen className="h-12 w-12" />
           <p className="text-lg">No repos cached yet.</p>
           <p className="text-sm">
-            Click &quot;Sync Repos&quot; to fetch the list of AutoPkg recipe
-            repos from GitHub, then &quot;Sync All Recipes&quot; to index their
-            recipes.
+            {canMutateDiscover
+              ? 'Click "Sync Repos" to fetch the list of AutoPkg recipe repos from GitHub, then "Sync All Recipes" to index their recipes.'
+              : 'Ask an administrator to sync the discover cache if this list is empty.'}
           </p>
-          <Button
-            onClick={() => syncReposMutation.mutate()}
-            disabled={syncReposMutation.isPending}
-          >
-            <RefreshCw
-              className={`mr-2 h-4 w-4 ${syncReposMutation.isPending ? 'animate-spin' : ''}`}
-            />
-            Sync Repos from GitHub
-          </Button>
+          {canMutateDiscover ? (
+            <Button
+              onClick={() => syncReposMutation.mutate()}
+              disabled={syncReposMutation.isPending}
+            >
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${syncReposMutation.isPending ? 'animate-spin' : ''}`}
+              />
+              Sync Repos from GitHub
+            </Button>
+          ) : null}
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto">
@@ -496,18 +506,22 @@ export default function DiscoverRecipesPage() {
                               >
                                 <ExternalLink className="h-4 w-4" />
                               </a>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={alreadyAdded || addMutation.isPending}
-                                aria-label={`Add override for ${recipe.name}`}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  addMutation.mutate(recipe)
-                                }}
-                              >
-                                <Plus className="h-4 w-4" />
-                              </Button>
+                              {canAddRecipes ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={
+                                    alreadyAdded || addMutation.isPending
+                                  }
+                                  aria-label={`Add override for ${recipe.name}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    addMutation.mutate(recipe)
+                                  }}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </Button>
+                              ) : null}
                             </div>
                           </div>
                         )
@@ -525,6 +539,8 @@ export default function DiscoverRecipesPage() {
         <RepoRecipesDialog
           repo={selectedRepo}
           existingIdentifiers={existingIdentifiers}
+          canMutateDiscover={canMutateDiscover}
+          canAddRecipes={canAddRecipes}
           onClose={() => setSelectedRepo(null)}
           onAdded={() =>
             queryClient.invalidateQueries({
@@ -540,11 +556,15 @@ export default function DiscoverRecipesPage() {
 function RepoRecipesDialog({
   repo,
   existingIdentifiers,
+  canMutateDiscover,
+  canAddRecipes,
   onClose,
   onAdded,
 }: {
   repo: CachedGitHubRepo
   existingIdentifiers: Set<string>
+  canMutateDiscover: boolean
+  canAddRecipes: boolean
   onClose: () => void
   onAdded: () => void
 }) {
@@ -691,15 +711,17 @@ function RepoRecipesDialog({
                     >
                       <ExternalLink className="h-4 w-4" />
                     </a>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={alreadyAdded || addMutation.isPending}
-                      aria-label={`Add override for ${recipe.name}`}
-                      onClick={() => addMutation.mutate(recipe)}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
+                    {canAddRecipes ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={alreadyAdded || addMutation.isPending}
+                        aria-label={`Add override for ${recipe.name}`}
+                        onClick={() => addMutation.mutate(recipe)}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               )
@@ -712,17 +734,19 @@ function RepoRecipesDialog({
             <span className="text-sm text-muted-foreground">
               {totalCount > 0 ? `${totalCount} recipes` : ''}
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={syncMutation.isPending}
-              onClick={() => syncMutation.mutate()}
-            >
-              <RefreshCw
-                className={`mr-1 h-3 w-3 ${syncMutation.isPending ? 'animate-spin' : ''}`}
-              />
-              Sync
-            </Button>
+            {canMutateDiscover ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={syncMutation.isPending}
+                onClick={() => syncMutation.mutate()}
+              >
+                <RefreshCw
+                  className={`mr-1 h-3 w-3 ${syncMutation.isPending ? 'animate-spin' : ''}`}
+                />
+                Sync
+              </Button>
+            ) : null}
           </div>
           <Button variant="outline" onClick={onClose}>
             Close
