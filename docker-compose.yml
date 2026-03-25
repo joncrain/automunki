@@ -35,6 +35,7 @@ services:
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
       CLOUDFRONT_DISTRIBUTION_ID: ${CLOUDFRONT_DISTRIBUTION_ID:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      LOCAL_RUNNER_TOKEN: ${LOCAL_RUNNER_TOKEN:-}
       CORS_ORIGINS: '["http://localhost:3000"]'
     expose:
       - "8000"

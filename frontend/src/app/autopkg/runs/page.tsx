@@ -44,10 +44,10 @@ import {
   type UiSettingsRead,
 } from '@/lib/api'
 import {
-  buildLocalRunnerShellCommand,
   canTriggerRunRecipe,
-  LocalRunnerToastBody,
+  RUNNER_LOCAL_DELIVERY_KEY,
   RUNNER_STORAGE_KEY,
+  toastLocalRunRegistered,
 } from '@/lib/autopkg-run'
 import { formatDateTime } from '@/lib/format'
 import { munkiAccents } from '@/lib/munki-accents'
@@ -125,12 +125,7 @@ export default function AutoPkgRunsPage() {
       }),
     onSuccess: (run) => {
       if (run.runner_type === 'local') {
-        const cmd = buildLocalRunnerShellCommand(run)
-        toast.success('Local run registered — run from your clone', {
-          description: <LocalRunnerToastBody cmd={cmd} />,
-          duration: Infinity,
-          closeButton: true,
-        })
+        toastLocalRunRegistered(run)
       } else {
         toast.success('AutoPkg run triggered on GitHub Actions', {
           description: `Run ID: ${run.id}`,
@@ -433,7 +428,9 @@ function TriggerRunDialog({
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [recipeSearch, setRecipeSearch] = useState('')
-  const [runner, setRunner] = useState<'github' | 'local'>('github')
+  const [runnerChoice, setRunnerChoice] = useState<
+    'github' | 'local-manual' | 'local-daemon'
+  >('github')
 
   const { data: uiSettings } = useQuery({
     queryKey: ['settings', 'ui'],
@@ -454,15 +451,29 @@ function TriggerRunDialog({
       typeof window !== 'undefined'
         ? localStorage.getItem(RUNNER_STORAGE_KEY)
         : null
-    if (saved === 'github' || saved === 'local') {
-      setRunner(saved)
+    const delivery =
+      typeof window !== 'undefined'
+        ? localStorage.getItem(RUNNER_LOCAL_DELIVERY_KEY)
+        : null
+    if (saved === 'github') {
+      setRunnerChoice('github')
+      return
+    }
+    if (saved === 'local') {
+      setRunnerChoice(delivery === 'daemon' ? 'local-daemon' : 'local-manual')
       return
     }
     if (
       uiSettings?.autopkg_runner_mode === 'github' ||
       uiSettings?.autopkg_runner_mode === 'local'
     ) {
-      setRunner(uiSettings.autopkg_runner_mode)
+      setRunnerChoice(
+        uiSettings.autopkg_runner_mode === 'local'
+          ? delivery === 'daemon'
+            ? 'local-daemon'
+            : 'local-manual'
+          : 'github',
+      )
     }
   }, [open, uiSettings])
 
@@ -508,8 +519,15 @@ function TriggerRunDialog({
       }
       names = runnableNames
     }
-    localStorage.setItem(RUNNER_STORAGE_KEY, runner)
-    onTrigger(names, runner)
+    const apiRunner = runnerChoice === 'github' ? 'github' : 'local'
+    localStorage.setItem(RUNNER_STORAGE_KEY, apiRunner)
+    if (apiRunner === 'local') {
+      localStorage.setItem(
+        RUNNER_LOCAL_DELIVERY_KEY,
+        runnerChoice === 'local-daemon' ? 'daemon' : 'manual',
+      )
+    }
+    onTrigger(names, apiRunner)
     setOpen(false)
     setSelected(new Set())
     setRecipeSearch('')
@@ -541,20 +559,29 @@ function TriggerRunDialog({
           <div className="grid gap-2">
             <Label htmlFor="autopkg-runner">Runner</Label>
             <Select
-              value={runner}
-              onValueChange={(v) => setRunner(v as 'github' | 'local')}
+              value={runnerChoice}
+              onValueChange={(v) =>
+                setRunnerChoice(v as 'github' | 'local-manual' | 'local-daemon')
+              }
             >
               <SelectTrigger id="autopkg-runner" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="github">GitHub Actions</SelectItem>
-                <SelectItem value="local">Local Mac (manual script)</SelectItem>
+                <SelectItem value="local-manual">
+                  Local Mac (copy shell command)
+                </SelectItem>
+                <SelectItem value="local-daemon">
+                  Local Mac (automated daemon)
+                </SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Local creates a pending run — execute AutoPkg on a Mac using the
-              repo doc{' '}
+              Local creates a pending run — either run{' '}
+              <code className="text-xs">poll_local_autopkg.sh</code> with a{' '}
+              <code className="text-xs">LOCAL_RUNNER_TOKEN</code> or use the
+              manual shell command. See{' '}
               <code className="text-xs">docs/local-autopkg-runner.md</code>.
             </p>
           </div>

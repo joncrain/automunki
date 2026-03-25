@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import uuid
 
 from fastapi.responses import JSONResponse
@@ -18,7 +19,22 @@ from automunki.models.user import User
 from automunki.services.permissions import can_access, get_effective_permissions
 
 # Synthetic identity for audit when ``auth_mode=disabled``.
+# Use example.com so Pydantic email validation accepts the placeholder (.local is reserved).
 DEV_USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
+DEV_USER_EMAIL = "dev@example.com"
+LOCAL_RUNNER_AUDIT_EMAIL = "local-runner@automunki.internal"
+
+
+def _local_runner_authenticated_path(path: str, method: str) -> bool:
+    """Allow ``LOCAL_RUNNER_TOKEN`` for AutoPkg daemon + one-shot script API calls."""
+    p = path.rstrip("/")
+    if p == "/api/v1/autopkg/metadata-cache" and method in ("GET", "PUT"):
+        return True
+    if p.startswith("/api/v1/autopkg/runs/config") and method == "GET":
+        return True
+    if p == "/api/v1/autopkg/runs/claim-next-local" and method == "POST":
+        return True
+    return False
 
 
 def _is_public_path(path: str, method: str) -> bool:
@@ -74,7 +90,7 @@ class RBACMiddleware(BaseHTTPMiddleware):
             request.state.rbac_user_id = DEV_USER_ID
             request.state.effective_permissions = {k: "write" for k in ALL_PAGE_KEYS}
             tid = audit_user_id_ctx.set(DEV_USER_ID)
-            tem = audit_user_email_ctx.set("dev@automunki.local")
+            tem = audit_user_email_ctx.set(DEV_USER_EMAIL)
             try:
                 return await call_next(request)
             finally:
@@ -85,6 +101,20 @@ class RBACMiddleware(BaseHTTPMiddleware):
         token = None
         if auth and auth.startswith("Bearer "):
             token = auth[7:].strip()
+
+        _lr = settings.local_runner_token
+        _lr_ok = bool(token) and bool(_lr) and len(token) == len(_lr) and hmac.compare_digest(token, _lr)
+        if _lr_ok and _local_runner_authenticated_path(path, request.method):
+            request.state.user = None
+            request.state.rbac_user_id = DEV_USER_ID
+            request.state.effective_permissions = {k: "write" for k in ALL_PAGE_KEYS}
+            tid = audit_user_id_ctx.set(DEV_USER_ID)
+            tem = audit_user_email_ctx.set(LOCAL_RUNNER_AUDIT_EMAIL)
+            try:
+                return await call_next(request)
+            finally:
+                audit_user_id_ctx.reset(tid)
+                audit_user_email_ctx.reset(tem)
 
         if not token:
             return JSONResponse(status_code=401, content={"detail": "Not authenticated"})

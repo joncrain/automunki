@@ -128,6 +128,7 @@ The frontend dev server starts on port 3000 and automatically proxies `/api/*` t
 | `DEBUG` | Enable debug mode (default: false) |
 | `CORS_ORIGINS` | JSON array of allowed origins. Not needed when using the proxy. |
 | `SLACK_WEBHOOK_URL` | Slack webhook for notifications |
+| `LOCAL_RUNNER_TOKEN` | Shared secret for `poll_local_autopkg.sh` (Bearer token on claim + runner paths). See [local runner](local-autopkg-runner.md). |
 
 ## Database Migrations
 
@@ -159,6 +160,8 @@ For production, AutoMunki can use [Neon](https://neon.tech) for managed Postgres
 ### Hosting Options
 
 Since the Next.js proxy means only one port needs to be exposed, any platform that can run Docker works:
+
+For a **self-hosted Mac mini** with packages on local disk and optional SMB for admins, see **[Mac mini deployment](mac-mini-deployment.md)** (nginx static `pkgs/`/`icons/`, `MUNKI_REPO_*` URLs, client `SoftwareRepoURL`).
 
 | Platform | Notes |
 |----------|-------|

@@ -12,6 +12,7 @@ logger = structlog.get_logger()
 async def import_repo(repo_path: str):
     """Import an existing Munki repo (pkgsinfo, manifests, overrides) into the database."""
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
     from automunki.core.db import async_session_factory
     from automunki.models.autopkg import AutoPkgRecipe
@@ -26,6 +27,7 @@ async def import_repo(repo_path: str):
         PkgInfoCatalog,
     )
     from automunki.services.audit import create_audit_entry
+    from automunki.services.munki import sync_pkginfo_raw_plist
     from automunki.services.trust import trust_info_from_plist_parent_recipe_trust
 
     repo = Path(repo_path)
@@ -102,7 +104,7 @@ async def import_repo(repo_path: str):
                     installcheck_script=data.get("installcheck_script"),
                     uninstallcheck_script=data.get("uninstallcheck_script"),
                     metadata_=metadata,
-                    raw_plist=_sanitize_plist_for_json(data),
+                    raw_plist=None,
                 )
                 session.add(pkg)
                 await session.flush()
@@ -123,6 +125,14 @@ async def import_repo(repo_path: str):
                             catalog_id=catalog_cache[cat_name].id,
                         )
                     )
+
+                await session.flush()
+                pkg_sync = (
+                    await session.execute(
+                        select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg.id)
+                    )
+                ).scalar_one()
+                sync_pkginfo_raw_plist(pkg_sync)
 
                 logger.info("imported_pkginfo", name=name, version=version)
 

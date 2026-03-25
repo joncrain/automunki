@@ -145,6 +145,9 @@ class PkgInfoUpdate(BaseModel):
     category: str | None = None
     developer: str | None = None
     icon_name: str | None = None
+    installer_item_location: str | None = None
+    installer_item_hash: str | None = None
+    installer_item_size: int | None = None
     minimum_os_version: str | None = None
     maximum_os_version: str | None = None
     uninstall_method: str | None = None

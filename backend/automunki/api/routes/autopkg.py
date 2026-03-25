@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -62,6 +62,7 @@ from automunki.services.autopkg import (
     sync_repo_recipes_to_cache,
     sync_repos_to_cache,
 )
+from automunki.services.munki import sync_pkginfo_raw_plist
 from automunki.services.trust import (
     GitHubRateLimitError,
     build_location_cache,
@@ -107,6 +108,50 @@ def _normalize_pkginfo_into_override_only(recipe: AutoPkgRecipe) -> None:
     inp["pkginfo"] = pkg
     od["Input"] = inp
     recipe.override_data = od
+
+
+def _runner_plist_dict_for_recipe(recipe: AutoPkgRecipe) -> dict:
+    """
+    Build the override plist dict passed to AutoPkg runners (same shape as
+    ``overrides[].plist`` in ``GET /autopkg/runs/config``).
+    """
+    if recipe.override_data:
+        plist = dict(recipe.override_data)
+        trust = plist.get("ParentRecipeTrustInfo") or {}
+        trust.setdefault("parent_recipes", {})
+        trust.setdefault("non_core_processors", {})
+        if trust:
+            plist["ParentRecipeTrustInfo"] = trust
+        merge_db_trust_into_plist_for_runner(plist, recipe.trust_info)
+        iv = recipe.input_variables or {}
+        inp = plist.get("Input")
+        plist_input = dict(inp) if isinstance(inp, dict) else {}
+        if "pkginfo" not in plist_input and isinstance(iv, dict) and iv.get("pkginfo") is not None:
+            plist_input["pkginfo"] = iv["pkginfo"]
+            plist["Input"] = plist_input
+        return plist
+    plist = {
+        "Identifier": recipe.identifier,
+        "ParentRecipe": recipe.parent_recipe or "",
+        "Input": recipe.input_variables or {},
+    }
+    if recipe.trust_info:
+        plist_trust: dict = {
+            "parent_recipes": {},
+            "non_core_processors": {},
+        }
+        for section in ("parent_recipes", "non_core_processors"):
+            entries = recipe.trust_info.get(section, {})
+            if entries:
+                plist_trust[section] = {
+                    k: {
+                        "git_hash": "",
+                        "sha256_hash": v.get("sha256_hash", ""),
+                    }
+                    for k, v in entries.items()
+                }
+        plist["ParentRecipeTrustInfo"] = plist_trust
+    return plist
 
 
 def _plist_trust_snippet_from_db_trust(trust_info: dict) -> dict:
@@ -269,6 +314,32 @@ async def list_runs(
     )
 
 
+@router.post("/runs/claim-next-local", response_model=AutoPkgRunRead)
+async def claim_next_local_run(session: AsyncSession = Depends(get_session)):
+    """Atomically claim the oldest pending **local** run (``FOR UPDATE SKIP LOCKED``).
+
+    Use this from ``poll_local_autopkg.sh`` with ``LOCAL_RUNNER_TOKEN``, or with a normal
+    user JWT that has AutoPkg runs write access. Returns **204** when no run is waiting.
+    """
+    stmt = (
+        select(AutoPkgRun)
+        .where(AutoPkgRun.runner_type == "local")
+        .where(AutoPkgRun.status == RunStatus.pending)
+        .order_by(AutoPkgRun.created_at.asc())
+        .with_for_update(skip_locked=True)
+        .limit(1)
+    )
+    async with session.begin():
+        result = await session.execute(stmt)
+        run = result.scalar_one_or_none()
+        if run is None:
+            return Response(status_code=204)
+        run.status = RunStatus.running
+        run.started_at = datetime.now(UTC)
+    await session.refresh(run)
+    return AutoPkgRunRead.model_validate(run)
+
+
 @router.get("/runs/config")
 async def get_run_config(
     session: AsyncSession = Depends(get_session),
@@ -299,46 +370,8 @@ async def get_run_config(
         override_entry: dict = {
             "name": recipe.name,
             "identifier": recipe.identifier,
+            "plist": _runner_plist_dict_for_recipe(recipe),
         }
-        if recipe.override_data:
-            plist = dict(recipe.override_data)
-            trust = plist.get("ParentRecipeTrustInfo") or {}
-            trust.setdefault("parent_recipes", {})
-            trust.setdefault("non_core_processors", {})
-            if trust:
-                plist["ParentRecipeTrustInfo"] = trust
-            # override plist may list only the immediate parent; DB trust_info has full chain
-            merge_db_trust_into_plist_for_runner(plist, recipe.trust_info)
-            # Legacy rows: pkginfo was duplicated in input_variables; prefer override Input if present
-            iv = recipe.input_variables or {}
-            inp = plist.get("Input")
-            plist_input = dict(inp) if isinstance(inp, dict) else {}
-            if "pkginfo" not in plist_input and isinstance(iv, dict) and iv.get("pkginfo") is not None:
-                plist_input["pkginfo"] = iv["pkginfo"]
-                plist["Input"] = plist_input
-            override_entry["plist"] = plist
-        else:
-            override_entry["plist"] = {
-                "Identifier": recipe.identifier,
-                "ParentRecipe": recipe.parent_recipe or "",
-                "Input": recipe.input_variables or {},
-            }
-            if recipe.trust_info:
-                plist_trust: dict = {
-                    "parent_recipes": {},
-                    "non_core_processors": {},
-                }
-                for section in ("parent_recipes", "non_core_processors"):
-                    entries = recipe.trust_info.get(section, {})
-                    if entries:
-                        plist_trust[section] = {
-                            k: {
-                                "git_hash": "",
-                                "sha256_hash": v.get("sha256_hash", ""),
-                            }
-                            for k, v in entries.items()
-                        }
-                override_entry["plist"]["ParentRecipeTrustInfo"] = plist_trust
 
         overrides.append(override_entry)
 
@@ -542,6 +575,29 @@ async def list_recipes(
     keys = list({_recipe_pkginfo_key(r) for r in recipes})
     labels = await _batch_pkginfo_labels(session, keys)
     return [_enrich_recipe_read(r, labels) for r in recipes]
+
+
+@router.get("/recipes/{recipe_id}/runner-override.plist")
+async def download_runner_override_plist(
+    recipe_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    XML plist of the override in the same form as ``overrides[].plist`` in
+    ``GET /autopkg/runs/config`` (including merged DB trust for runners).
+    """
+    recipe = await session.get(AutoPkgRecipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    plist_dict = _runner_plist_dict_for_recipe(recipe)
+    body = plistlib.dumps(plist_dict, fmt=plistlib.FMT_XML)
+    safe_name = re.sub(r"[^\w.\-]+", "_", recipe.name).strip("._") or "override"
+    filename = f"{safe_name}.recipe.plist"
+    return Response(
+        content=body,
+        media_type="application/x-plist",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/recipes", response_model=AutoPkgRecipeRead)
@@ -1593,7 +1649,7 @@ async def ingest_pkginfo(
         installcheck_script=plist.get("installcheck_script"),
         uninstallcheck_script=plist.get("uninstallcheck_script"),
         metadata_=plist.get("_metadata"),
-        raw_plist=plist,
+        raw_plist=None,
     )
     session.add(pkg)
     await session.flush()
@@ -1607,6 +1663,11 @@ async def ingest_pkginfo(
             await session.flush()
         session.add(PkgInfoCatalog(pkg_info_id=pkg.id, catalog_id=catalog.id))
 
+    await session.flush()
+    pkg_sync = (
+        await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg.id))
+    ).scalar_one()
+    sync_pkginfo_raw_plist(pkg_sync)
     await session.commit()
     return {
         "message": "Ingested",

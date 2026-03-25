@@ -22,7 +22,7 @@ from automunki.schemas.munki import (
     PromoteRequest,
 )
 from automunki.services.audit import create_audit_entry
-from automunki.services.munki import compile_pkginfo_plist
+from automunki.services.munki import compile_pkginfo_plist, sync_pkginfo_raw_plist
 from automunki.services.promotion import promote_pkginfo
 
 router = APIRouter(prefix="/pkginfo", tags=["pkginfo"])
@@ -208,6 +208,7 @@ async def bulk_update_pkginfo(
             select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id)
         )
         pkg = reload.scalar_one()
+        sync_pkginfo_raw_plist(pkg)
         after = _to_read(pkg)
 
         await create_audit_entry(
@@ -409,6 +410,11 @@ async def update_pkginfo_catalogs(
         if cat:
             session.add(PkgInfoCatalog(pkg_info_id=pkg_id, catalog_id=cat.id))
 
+    await session.flush()
+    result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
+    pkg = result.scalar_one()
+    sync_pkginfo_raw_plist(pkg)
+
     await create_audit_entry(
         session,
         action="update",
@@ -421,7 +427,6 @@ async def update_pkginfo_catalogs(
     )
 
     await session.commit()
-    await session.refresh(pkg)
     result = await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_id))
     pkg = result.scalar_one_or_none()
     return PkgInfoRead(**_to_read(pkg))

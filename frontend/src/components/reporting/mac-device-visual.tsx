@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import type { ComponentType } from 'react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -271,13 +270,12 @@ export function MacDeviceHeroVisual({
     >
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,var(--tw-gradient-stops))] from-gruvbox-blue/10 via-transparent to-transparent dark:from-gruvbox-aqua/15" />
       {showRaster ? (
-        <Image
+        // Apple CDN URLs: plain img avoids next/image remotePatterns / loader edge cases (we do not optimize these).
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
           src={imageUrl as string}
           alt={alt}
-          fill
-          className="relative z-[1] object-contain p-6"
-          sizes="(max-width: 768px) 100vw, 22rem"
-          unoptimized
+          className="absolute inset-0 z-[1] box-border object-contain p-6"
           onError={() => setRasterFailed(true)}
         />
       ) : (

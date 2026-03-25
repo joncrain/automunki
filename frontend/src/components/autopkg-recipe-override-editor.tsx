@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   Trash2,
 } from 'lucide-react'
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { PkginfoIconUpload } from '@/components/pkginfo-icon-upload'
 import { SoftwareIcon } from '@/components/software-icon'
@@ -471,14 +471,25 @@ function PkginfoEditor({
 
 // ── Main editor ──────────────────────────────────────────────────────────
 
+export type RecipeOverrideToolbarApi = {
+  save: () => void
+  deleteRecipe: () => void
+  isSaving: boolean
+  isDeleting: boolean
+  canSave: boolean
+}
+
 export function RecipeOverrideEditor({
   recipe,
   onDeleted,
   readOnly = false,
+  onToolbarApiChange,
 }: {
   recipe: AutoPkgRecipeRead
   onDeleted?: () => void
   readOnly?: boolean
+  /** When not read-only, exposes save/delete for a header toolbar (see recipe detail page). */
+  onToolbarApiChange?: (api: RecipeOverrideToolbarApi | null) => void
 }) {
   const queryClient = useQueryClient()
   const inputVarsRaw = recipe.input_variables as Record<string, unknown> | null
@@ -564,7 +575,7 @@ export function RecipeOverrideEditor({
     onError: (err: Error) => toast.error(err.message),
   })
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     const nonPkgDict = kvToDict(nonPkginfoEntries)
     const hasPkginfo = Object.keys(pkginfo).length > 0
     const fullInput: Record<string, unknown> = {
@@ -599,7 +610,52 @@ export function RecipeOverrideEditor({
     }
 
     saveMutation.mutate(payload)
-  }
+  }, [
+    nonPkginfoEntries,
+    pkginfo,
+    identifier,
+    name,
+    parentRecipe,
+    sourceRepoFullName,
+    isEnabled,
+    isOverride,
+    autoPromote,
+    hasStoredOverridePlist,
+    recipe.override_data,
+    saveMutation,
+  ])
+
+  const handleDelete = useCallback(() => {
+    if (
+      window.confirm(`Delete override "${recipe.name}"? This cannot be undone.`)
+    ) {
+      deleteMutation.mutate()
+    }
+  }, [deleteMutation, recipe.name])
+
+  useEffect(() => {
+    if (readOnly) {
+      onToolbarApiChange?.(null)
+      return
+    }
+    onToolbarApiChange?.({
+      save: handleSave,
+      deleteRecipe: handleDelete,
+      isSaving: saveMutation.isPending,
+      isDeleting: deleteMutation.isPending,
+      canSave:
+        Boolean(name.trim() && identifier.trim()) && !saveMutation.isPending,
+    })
+  }, [
+    readOnly,
+    onToolbarApiChange,
+    handleSave,
+    handleDelete,
+    saveMutation.isPending,
+    deleteMutation.isPending,
+    name,
+    identifier,
+  ])
 
   const catalogNames = (catalogs ?? []).map((c) => c.name)
   const nonPkginfoCount = nonPkginfoEntries.length
@@ -901,34 +957,6 @@ export function RecipeOverrideEditor({
           )}
         </TabsContent>
       </Tabs>
-
-      {!readOnly ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-6">
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={deleteMutation.isPending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Delete override "${recipe.name}"? This cannot be undone.`,
-                )
-              ) {
-                deleteMutation.mutate()
-              }
-            }}
-          >
-            <Trash2 className="mr-1 h-4 w-4" />
-            {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={saveMutation.isPending || !name || !identifier}
-          >
-            {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-          </Button>
-        </div>
-      ) : null}
     </>
   )
 }

@@ -2,16 +2,21 @@
 
 import { useQuery } from '@tanstack/react-query'
 import {
+  Activity,
   BookMarked,
   CheckCircle,
   FolderOpen,
+  MonitorSmartphone,
+  MoonStar,
   Package,
+  Percent,
   Play,
   ScrollText,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { ComponentType, ReactNode } from 'react'
 import { AutoPkgRunsChart } from '@/components/dashboard/autopkg-runs-chart'
+import { FleetTimeseriesChart } from '@/components/dashboard/fleet-timeseries-chart'
 import {
   SoftwareAvatarCircles,
   useSoftwarePreviewPackages,
@@ -29,10 +34,11 @@ import {
   type AutoPkgRunRead,
   api,
   type CatalogRead,
+  type FleetActivityTimeseries,
+  type FleetComplianceOverview,
   type ManifestRead,
   type PaginatedResponse,
 } from '@/lib/api'
-import { formatDate } from '@/lib/format'
 import { manifestTitle } from '@/lib/manifest-title'
 import {
   type MunkiAccentKey,
@@ -118,6 +124,17 @@ export default function DashboardPage() {
     queryFn: () => api.get<unknown[]>('/autopkg/approvals'),
   })
 
+  const { data: compliance, isLoading: complianceLoading } = useQuery({
+    queryKey: ['reports-compliance'],
+    queryFn: () => api.get<FleetComplianceOverview>('/reports/compliance'),
+  })
+
+  const { data: fleetActivity, isLoading: fleetActivityLoading } = useQuery({
+    queryKey: ['reports-fleet-activity', 30],
+    queryFn: () =>
+      api.get<FleetActivityTimeseries>('/reports/fleet-activity?days=30'),
+  })
+
   const runs = runsPage?.items ?? []
   const totalTitles = softwarePreviewPage?.total ?? 0
   const softwarePreviewItems = softwarePreviewPage?.items ?? []
@@ -127,7 +144,6 @@ export default function DashboardPage() {
   const totalRuns = runsPage?.total ?? 0
   const lastRun = runs[0]
   const pendingApprovals = Array.isArray(approvals) ? approvals.length : 0
-  const recentRuns = runs.slice(0, 5)
 
   return (
     <div className="space-y-10">
@@ -305,6 +321,174 @@ export default function DashboardPage() {
       </section>
 
       <section className="space-y-4">
+        <h2 className={munkiSectionHeadingClass()}>
+          <span className={munkiSectionMarkerClass()} aria-hidden />
+          Device reporting
+        </h2>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Macs checking in via the AutoMunki agent or Munki postflight. Open{' '}
+          <Link
+            href="/reporting"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Devices
+          </Link>{' '}
+          or{' '}
+          <Link
+            href="/reporting/installs"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Installs
+          </Link>{' '}
+          for full lists.
+        </p>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card
+            className={cn(
+              'border-l-4 border-l-gruvbox-blue/50 bg-gruvbox-blue/[0.06]',
+            )}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Fleet size</CardTitle>
+              <MonitorSmartphone
+                className="size-4 text-gruvbox-blue"
+                aria-hidden
+              />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold">
+                {complianceLoading ? '—' : (compliance?.total_machines ?? 0)}
+              </p>
+              <CardDescription>machines in database</CardDescription>
+            </CardContent>
+          </Card>
+          <Card
+            className={cn(
+              'border-l-4 border-l-gruvbox-green/50 bg-gruvbox-green/[0.06]',
+            )}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active (7d)</CardTitle>
+              <Activity className="size-4 text-gruvbox-green" aria-hidden />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold">
+                {complianceLoading
+                  ? '—'
+                  : (compliance?.checked_in_last_7_days ?? 0)}
+              </p>
+              <CardDescription>checked in recently</CardDescription>
+            </CardContent>
+          </Card>
+          <Card
+            className={cn(
+              'border-l-4 border-l-gruvbox-orange/50 bg-gruvbox-orange/[0.07]',
+            )}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Stale (30d+)
+              </CardTitle>
+              <MoonStar className="size-4 text-gruvbox-orange" aria-hidden />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold">
+                {complianceLoading
+                  ? '—'
+                  : (compliance?.stale_over_30_days ?? 0)}
+              </p>
+              <CardDescription>no check-in in 30 days</CardDescription>
+            </CardContent>
+          </Card>
+          <Card
+            className={cn(
+              'border-l-4 border-l-gruvbox-purple/50 bg-gruvbox-purple/[0.06]',
+            )}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">7-day reach</CardTitle>
+              <Percent className="size-4 text-gruvbox-purple" aria-hidden />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold">
+                {complianceLoading
+                  ? '—'
+                  : `${compliance?.compliance_percentage ?? 0}%`}
+              </p>
+              <CardDescription>of fleet reporting weekly</CardDescription>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card
+            className={cn('flex flex-col', munkiAccents.reporting.statCard)}
+          >
+            <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+              <div>
+                <CardTitle>Check-ins over time</CardTitle>
+                <CardDescription>
+                  Check-in events per day (last 30 days)
+                </CardDescription>
+              </div>
+              <Link
+                href="/reporting"
+                className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Devices
+              </Link>
+            </CardHeader>
+            <CardContent className="flex-1">
+              {fleetActivityLoading ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : (
+                <FleetTimeseriesChart
+                  points={fleetActivity?.checkins_by_day ?? []}
+                  seriesLabel="Check-ins"
+                  gradientId="fillFleetCheckins"
+                  strokeVar="var(--chart-1)"
+                  emptyMessage="No check-ins yet — data appears after Macs report in."
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card
+            className={cn('flex flex-col', munkiAccents.reporting.statCard)}
+          >
+            <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+              <div>
+                <CardTitle>Install rows over time</CardTitle>
+                <CardDescription>
+                  Managed install report rows recorded per day (last 30 days)
+                </CardDescription>
+              </div>
+              <Link
+                href="/reporting/installs"
+                className="shrink-0 text-sm font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Installs
+              </Link>
+            </CardHeader>
+            <CardContent className="flex-1">
+              {fleetActivityLoading ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : (
+                <FleetTimeseriesChart
+                  points={fleetActivity?.install_rows_by_day ?? []}
+                  seriesLabel="Rows"
+                  gradientId="fillFleetInstalls"
+                  strokeVar="var(--chart-3)"
+                  emptyMessage="No install report rows yet — they appear when clients send ManagedInstallReport data."
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <section className="space-y-4">
         <h2 className="text-xl font-semibold tracking-tight">AutoPkg</h2>
         <div className="grid gap-4 md:grid-cols-3">
           <StatLinkCard
@@ -395,56 +579,6 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <AutoPkgRunsChart runs={runs} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <CardTitle>Recent AutoPkg runs</CardTitle>
-            <Link
-              href="/autopkg/runs"
-              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-            >
-              All runs
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {recentRuns.length ? (
-              <div className="space-y-3">
-                {recentRuns.map((run) => (
-                  <Link
-                    key={run.id}
-                    href="/autopkg/runs"
-                    className="flex items-center justify-between rounded-md border p-3 transition-colors hover:bg-accent"
-                  >
-                    <div>
-                      <Badge
-                        variant={
-                          run.status === 'completed'
-                            ? 'default'
-                            : run.status === 'failed'
-                              ? 'destructive'
-                              : 'secondary'
-                        }
-                      >
-                        {run.status}
-                      </Badge>
-                      <span className="ml-2 text-sm text-muted-foreground">
-                        {run.trigger_type}
-                      </span>
-                    </div>
-                    <span
-                      suppressHydrationWarning
-                      className="text-sm text-muted-foreground"
-                    >
-                      {formatDate(run.created_at)}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No runs yet</p>
-            )}
           </CardContent>
         </Card>
       </section>

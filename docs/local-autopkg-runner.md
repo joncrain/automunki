@@ -36,6 +36,40 @@ Use `-w` with `--setup-defaults` if the repo is not next to the default path.
 
 Full reference: `./AutoPkg/scripts/run_local_autopkg.sh --help`
 
+## Automated daemon (no manual command)
+
+If you set **`LOCAL_RUNNER_TOKEN`** on the AutoMunki server (same value in `.env` as `openssl rand -hex 32`), the API accepts that token as `Authorization: Bearer …` for the local runner endpoints (claim, metadata cache, run config). A Mac that runs AutoPkg can then loop with **`poll_local_autopkg.sh`**, which:
+
+1. `POST /api/v1/autopkg/runs/claim-next-local` — if **204**, nothing is queued; wait and retry.
+2. If **200**, read `id` from the JSON body and invoke `run_local_autopkg.sh` with `--run-id` (same token for curl/Python).
+
+**Server**
+
+```bash
+# In the repo root .env (or Docker env for `backend`)
+LOCAL_RUNNER_TOKEN=<long-random-secret>
+```
+
+Restart the backend. The token is only checked for specific paths (see [API reference](api-reference.md)).
+
+**Runner Mac**
+
+```bash
+export AUTOMUNKI_BACKEND_URL=https://your-automunki.example.com
+export LOCAL_RUNNER_TOKEN=<same-as-server>
+./AutoPkg/scripts/poll_local_autopkg.sh --backend-url "$AUTOMUNKI_BACKEND_URL" --token "$LOCAL_RUNNER_TOKEN"
+```
+
+Optional: `--workspace /path/to/automunki`, `--interval 30` (seconds between polls when idle).
+
+**UI:** In the AutoPkg run dialog, choose **Local Mac (automated daemon)** so the success toast does not expect you to copy a shell command. **Local Mac (copy shell command)** keeps the previous behavior.
+
+**launchd (stay running after login)**
+
+Use a LaunchAgent that sets `AUTOMUNKI_BACKEND_URL` and `LOCAL_RUNNER_TOKEN` (or read the token from Keychain with `security find-generic-password -s automunki-local-runner -w`). Run `poll_local_autopkg.sh` with `RunAtLoad` and `KeepAlive`.
+
+**Note:** You can still use a normal **user JWT** with `run_local_autopkg.sh` instead of `LOCAL_RUNNER_TOKEN`; the daemon path is for machines that should not store a user password.
+
 ## When to use a local runner
 
 - You want builds on an internal Mac without GitHub-hosted minutes or workflow limits.
@@ -47,11 +81,14 @@ Full reference: `./AutoPkg/scripts/run_local_autopkg.sh --help`
 ## UI: GitHub vs local
 
 1. Open **Settings** — the server default is shown (`AUTOPKG_RUNNER_MODE` in `.env`).
-2. On **AutoPkg → Runs**, click **Trigger Run** and choose **Runner**: **GitHub Actions** or **Local Mac**.
+2. On **AutoPkg → Runs** (or the recipe quick-run dialog), choose **Runner**:
+   - **GitHub Actions**
+   - **Local Mac (copy shell command)** — toast shows `./AutoPkg/scripts/run_local_autopkg.sh …`
+   - **Local Mac (automated daemon)** — for `poll_local_autopkg.sh` + `LOCAL_RUNNER_TOKEN`; no command to copy
 3. Your choice is remembered in the browser for the next trigger.
 
 - **GitHub Actions**: the API creates an `autopkg_run` and dispatches `autopkg_cloud_runner.yml` (requires `GITHUB_TOKEN` and `GITHUB_REPO` on the server).
-- **Local Mac**: the API creates an `autopkg_run` with status **pending** and `runner_type` **local**. Nothing runs until you execute the script (or manual steps below).
+- **Local Mac** (both variants): the API creates an `autopkg_run` with status **pending** and `runner_type` **local**. Either run **`poll_local_autopkg.sh`** (automated) or **`run_local_autopkg.sh`** with the run `id` (manual), or follow [manual steps](#manual-steps-same-as-the-script) below.
 
 ## Prerequisites on the local Mac
 
@@ -114,3 +151,4 @@ Set `GITHUB_WORKSPACE`, `BACKEND_URL` (no `/api/v1`), `RUN_ID`, and optionally `
 | `API_PUBLIC_URL` | Used when dispatching GitHub Actions so the workflow can call back to your API. |
 | `GITHUB_TOKEN` / `GITHUB_REPO` | Required on the **server** only for **GitHub** runner mode. |
 | `AUTOMUNKI_API_TOKEN` | Optional; same as `--token` for local script Python `urllib` calls. |
+| `LOCAL_RUNNER_TOKEN` | **Server:** shared secret so the daemon can authenticate without a user JWT. **Client:** same value in `Authorization: Bearer` for `poll_local_autopkg.sh` / `run_local_autopkg.sh` when not using a JWT. |

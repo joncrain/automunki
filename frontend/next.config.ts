@@ -3,12 +3,15 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   output: 'standalone',
   allowedDevOrigins: ['*.ngrok-free.app', '*.ngrok.io'],
+  experimental: {
+    browserDebugInfoInTerminal: true,
+  },
   images: {
     remotePatterns: [
       {
         protocol: 'https',
         hostname: 'statici.icloud.com',
-        pathname: '/fmipmobile/deviceImages-9.0/**',
+        pathname: '/fmipmobile/**',
       },
       {
         protocol: 'https',

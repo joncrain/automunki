@@ -6,11 +6,13 @@ Full interactive documentation is available at `/api/docs` (Swagger UI) when the
 
 ## Authentication
 
-All endpoints except `/health`, `/ready`, and `/api/v1/auth/*` require a Bearer token.
+Most endpoints require a Bearer JWT.
 
 ```
 Authorization: Bearer <jwt_token>
 ```
+
+The **local AutoPkg daemon** (`poll_local_autopkg.sh`) may instead use a shared secret configured on the server as **`LOCAL_RUNNER_TOKEN`**: send `Authorization: Bearer <same value>` for `POST /autopkg/runs/claim-next-local`, `GET`/`PUT /autopkg/metadata-cache`, and `GET /autopkg/runs/config` only (see [`docs/local-autopkg-runner.md`](local-autopkg-runner.md)).
 
 ### Auth Endpoints
 
@@ -88,6 +90,7 @@ Authorization: Bearer <jwt_token>
 |--------|------|-------------|
 | POST | `/autopkg/runs` | Trigger a new AutoPkg run (body: `recipe_names`, optional `runner`: `github` \| `local`; default from `AUTOPKG_RUNNER_MODE`) |
 | GET | `/autopkg/runs` | List run history (paginated) |
+| POST | `/autopkg/runs/claim-next-local` | Atomically claim the oldest pending **local** run (`status` → `running`). **204** if none. JWT (AutoPkg runs write) or `LOCAL_RUNNER_TOKEN` |
 | GET | `/autopkg/runs/{id}` | Get run detail with results |
 | POST | `/autopkg/runs/{id}/results` | Post per-recipe result (webhook) |
 | POST | `/autopkg/runs/{id}/complete` | Mark run as complete (webhook) |

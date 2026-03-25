@@ -378,3 +378,60 @@ async def compliance_overview(
         "stale_over_30_days": stale,
         "compliance_percentage": round((recent / total * 100) if total > 0 else 0, 1),
     }
+
+
+def _filled_daily_counts(
+    rows: list[tuple[object, int]],
+    days: int,
+) -> list[dict[str, str | int]]:
+    """Map SQL day buckets to a full calendar series including zeros."""
+    counts: dict[date, int] = {}
+    for dt, cnt in rows:
+        if isinstance(dt, datetime):
+            d = dt.astimezone(UTC).date()
+        else:
+            d = dt  # pragma: no cover
+        counts[d] = int(cnt)
+
+    end = datetime.now(UTC).date()
+    start = end - timedelta(days=days - 1)
+    series: list[dict[str, str | int]] = []
+    cur = start
+    while cur <= end:
+        series.append({"date": cur.isoformat(), "count": counts.get(cur, 0)})
+        cur += timedelta(days=1)
+    return series
+
+
+@router.get("/fleet-activity")
+async def fleet_activity_timeseries(
+    session: AsyncSession = Depends(get_session),
+    days: int = Query(30, ge=7, le=90, description="Number of calendar days to include"),
+):
+    """Fleet-wide check-ins per day and install report rows created per day."""
+    cutoff = datetime.now(UTC) - timedelta(days=days - 1)
+    day_checkin = func.date_trunc("day", ClientMachineCheckin.checked_in_at)
+    checkin_rows = (
+        await session.execute(
+            select(day_checkin, func.count(ClientMachineCheckin.id))
+            .where(ClientMachineCheckin.checked_in_at >= cutoff)
+            .group_by(day_checkin)
+            .order_by(day_checkin)
+        )
+    ).all()
+
+    day_install = func.date_trunc("day", ClientInstallReport.created_at)
+    install_rows = (
+        await session.execute(
+            select(day_install, func.count(ClientInstallReport.id))
+            .where(ClientInstallReport.created_at >= cutoff)
+            .group_by(day_install)
+            .order_by(day_install)
+        )
+    ).all()
+
+    return {
+        "days": days,
+        "checkins_by_day": _filled_daily_counts(checkin_rows, days),
+        "install_rows_by_day": _filled_daily_counts(install_rows, days),
+    }

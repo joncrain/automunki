@@ -8,7 +8,7 @@ from automunki.api.deps import get_session
 from automunki.api.routes.oidc import router as oidc_router
 from automunki.core.config import settings
 from automunki.core.page_keys import ALL_PAGE_KEYS
-from automunki.core.rbac_middleware import DEV_USER_ID
+from automunki.core.rbac_middleware import DEV_USER_EMAIL, DEV_USER_ID
 from automunki.core.security import auth_backend, current_active_user, fastapi_users
 from automunki.models.user import User
 from automunki.schemas.auth_config import AuthConfigResponse
@@ -41,7 +41,7 @@ async def read_me(request: Request, session: AsyncSession = Depends(get_session)
         return MeResponse(
             user=UserRead(
                 id=DEV_USER_ID,
-                email="dev@automunki.local",
+                email=DEV_USER_EMAIL,
                 is_active=True,
                 is_superuser=True,
                 is_verified=True,

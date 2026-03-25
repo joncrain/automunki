@@ -183,6 +183,9 @@ interface EditableFields {
   category: string
   developer: string
   icon_name: string
+  installer_item_location: string
+  installer_item_hash: string
+  installer_item_size: number | null
   minimum_os_version: string
   maximum_os_version: string
   uninstall_method: string
@@ -225,6 +228,9 @@ function pkgToEditable(pkg: PkgInfoDetail): EditableFields {
     category: pkg.category ?? '',
     developer: pkg.developer ?? '',
     icon_name: pkg.icon_name ?? '',
+    installer_item_location: pkg.installer_item_location ?? '',
+    installer_item_hash: pkg.installer_item_hash ?? '',
+    installer_item_size: pkg.installer_item_size,
     minimum_os_version: pkg.minimum_os_version ?? '',
     maximum_os_version: pkg.maximum_os_version ?? '',
     uninstall_method: pkg.uninstall_method ?? '',
@@ -1025,21 +1031,35 @@ export default function SoftwareDetailPage() {
                 <CardTitle>Installer Details</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
-                <ReadOnlyField
+                <EditableField
                   label="Location"
-                  value={pkg.installer_item_location}
-                />
-                <ReadOnlyField
-                  label="Hash (SHA256)"
-                  value={pkg.installer_item_hash}
-                />
-                <ReadOnlyField
-                  label="Installer Size"
                   value={
-                    pkg.installer_item_size
-                      ? `${Math.round(pkg.installer_item_size / 1024)} MB`
-                      : null
+                    effectiveEditing
+                      ? (form?.installer_item_location ?? '')
+                      : (pkg.installer_item_location ?? '')
                   }
+                  editing={effectiveEditing}
+                  onChange={(v) => updateField('installer_item_location', v)}
+                />
+                <EditableField
+                  label="Hash (SHA256)"
+                  value={
+                    effectiveEditing
+                      ? (form?.installer_item_hash ?? '')
+                      : (pkg.installer_item_hash ?? '')
+                  }
+                  editing={effectiveEditing}
+                  onChange={(v) => updateField('installer_item_hash', v)}
+                />
+                <InstallerSizeMbField
+                  label="Installer Size"
+                  kb={
+                    effectiveEditing
+                      ? form?.installer_item_size
+                      : pkg.installer_item_size
+                  }
+                  editing={effectiveEditing}
+                  onKbChange={(v) => updateField('installer_item_size', v)}
                 />
                 <ReadOnlyField
                   label="Installed Size"
@@ -1374,6 +1394,53 @@ function EditableField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
+    </div>
+  )
+}
+
+/** Munki ``installer_item_size`` is in KiB; we edit in MB for readability. */
+function InstallerSizeMbField({
+  label,
+  kb,
+  editing,
+  onKbChange,
+}: {
+  label: string
+  kb: number | null | undefined
+  editing: boolean
+  onKbChange: (v: number | null) => void
+}) {
+  const displayMb = kb != null && kb > 0 ? `${Math.round(kb / 1024)} MB` : '—'
+  if (!editing) {
+    return (
+      <div>
+        <span className="text-sm font-medium text-muted-foreground">
+          {label}
+        </span>
+        <p className="mt-1 truncate">{displayMb}</p>
+      </div>
+    )
+  }
+  return (
+    <div>
+      <Label>{label} (MB)</Label>
+      <Input
+        type="number"
+        min={0}
+        className="mt-1"
+        value={kb != null && kb > 0 ? Math.round(kb / 1024) : ''}
+        onChange={(e) => {
+          const v = e.target.value
+          if (v === '') onKbChange(null)
+          else {
+            const n = Number.parseInt(v, 10)
+            if (!Number.isNaN(n)) onKbChange(n * 1024)
+          }
+        }}
+      />
+      <p className="mt-1 text-xs text-muted-foreground">
+        Stored as KiB for Munki installer_item_size.
+      </p>
     </div>
   )
 }

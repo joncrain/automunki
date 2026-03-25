@@ -62,11 +62,10 @@ import {
   recipePkginfoKey,
 } from '@/lib/autopkg-recipe'
 import {
-  buildLocalRunnerShellCommand,
   canTriggerRunRecipe,
-  LocalRunnerToastBody,
   QuickRunDialog,
   type RecipeQuickRunTarget,
+  toastLocalRunRegistered,
 } from '@/lib/autopkg-run'
 import { formatDateTime } from '@/lib/format'
 import { munkiAccents } from '@/lib/munki-accents'
@@ -687,12 +686,7 @@ export default function RecipesPage() {
     onSuccess: (run) => {
       setRowSelection({})
       if (run.runner_type === 'local') {
-        const cmd = buildLocalRunnerShellCommand(run)
-        toast.success('Local run registered — run from your clone', {
-          description: <LocalRunnerToastBody cmd={cmd} />,
-          duration: Infinity,
-          closeButton: true,
-        })
+        toastLocalRunRegistered(run)
       } else {
         toast.success('AutoPkg run triggered on GitHub Actions', {
           description: `Run ID: ${run.id}`,

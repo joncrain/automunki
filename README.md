@@ -37,6 +37,7 @@ For detailed setup (local dev without Docker, ngrok, production, env vars), see 
 Other docs:
 
 - **[docs/architecture.md](docs/architecture.md)** — system design and data flow
+- **[docs/mac-mini-deployment.md](docs/mac-mini-deployment.md)** — Docker on a Mac mini, local `pkgs/` storage, nginx/SMB
 - **[docs/contributing.md](docs/contributing.md)** — repo layout and dev workflow
 
 ## Repository layout

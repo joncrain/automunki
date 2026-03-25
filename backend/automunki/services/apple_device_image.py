@@ -33,12 +33,19 @@ def apple_fmip_device_image_url(
     if not serial_number or not serial_number.strip():
         return None
 
+    hw = hardware_info if isinstance(hardware_info, dict) else {}
+    mm = (machine_model or "").strip()
+    if not mm:
+        raw = hw.get("machine_model")
+        if isinstance(raw, str) and raw.strip():
+            mm = raw.strip()
+            machine_model = mm
+
     sn = serial_number.strip()
     # MunkiReport: mixed-case serial → VM / non-hardware; use support image servlet.
     if sn != sn.upper():
         return f"https://km.support.apple.com/kb/securedImage.jsp?productid={quote(sn)}&size=240x240"
 
-    hw = hardware_info if isinstance(hardware_info, dict) else {}
     raw_family = hw.get("apple_image_family")
     if isinstance(raw_family, str) and raw_family.strip():
         family = raw_family.strip()

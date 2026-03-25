@@ -23,9 +23,13 @@ async def compile_catalog_plist(session: AsyncSession, catalog_id) -> bytes:
     Matches the behaviour of Munki's ``makecatalogs``: ``notes`` and all
     keys starting with ``_`` (e.g. ``_metadata``) are stripped from each
     pkginfo dict before the catalog is written.
+
+    Entries are always built from normalized DB columns (not ``raw_plist``) so
+    edits in the UI/API are reflected immediately.
     """
     result = await session.execute(
         select(PkgInfo)
+        .options(selectinload(PkgInfo.catalogs))
         .join(PkgInfoCatalog, PkgInfo.id == PkgInfoCatalog.pkg_info_id)
         .where(PkgInfoCatalog.catalog_id == catalog_id)
         .where(PkgInfo.is_deleted.is_(False))
@@ -34,10 +38,7 @@ async def compile_catalog_plist(session: AsyncSession, catalog_id) -> bytes:
 
     catalog_items = []
     for pkg in pkg_infos:
-        if pkg.raw_plist:
-            catalog_items.append(_strip_catalog_keys(dict(pkg.raw_plist)))
-        else:
-            catalog_items.append(_pkginfo_to_dict(pkg, for_catalog=True))
+        catalog_items.append(_strip_catalog_keys(_pkginfo_to_dict(pkg, for_catalog=True)))
 
     return plistlib.dumps(catalog_items)
 
@@ -87,10 +88,21 @@ async def compile_manifest_plist(session: AsyncSession, manifest_id) -> bytes:
 
 
 async def compile_pkginfo_plist(pkg_info: PkgInfo) -> bytes:
-    """Generate a pkginfo plist from a PkgInfo model."""
-    if pkg_info.raw_plist:
-        return plistlib.dumps(pkg_info.raw_plist)
+    """Generate a pkginfo plist from a PkgInfo model.
+
+    Always serializes from normalized columns so the download matches catalogs
+    and the software detail API.
+    """
     return plistlib.dumps(_pkginfo_to_dict(pkg_info))
+
+
+def sync_pkginfo_raw_plist(pkg: PkgInfo) -> None:
+    """Set ``raw_plist`` to a snapshot of the current columns (JSONB-friendly).
+
+    Import paths may still store an original plist; any update should refresh
+    this so database inspection and exports stay aligned with editable fields.
+    """
+    pkg.raw_plist = _pkginfo_to_dict(pkg, for_catalog=False)
 
 
 def _strip_catalog_keys(d: dict) -> dict:

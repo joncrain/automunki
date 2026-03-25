@@ -20,6 +20,7 @@ from automunki.api.routes.settings import router as settings_router
 from automunki.core.config import settings
 from automunki.core.middleware import RequestIDMiddleware
 from automunki.core.rbac_middleware import RBACMiddleware
+from automunki.core.repo_basic_auth_middleware import RepoBasicAuthMiddleware
 
 structlog.configure(
     processors=[
@@ -58,6 +59,7 @@ app = FastAPI(
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(RepoBasicAuthMiddleware)
 app.add_middleware(RBACMiddleware)
 app.add_middleware(
     CORSMiddleware,

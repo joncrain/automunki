@@ -8,6 +8,8 @@
 #   ./AutoPkg/scripts/run_local_autopkg.sh -b https://localhost:3000 -r <uuid> --autopkg-force   # autopkg run --force
 #   ./AutoPkg/scripts/run_local_autopkg.sh --setup-defaults
 #   ./AutoPkg/scripts/run_local_autopkg.sh --setup-defaults --github-token ghp_xxx
+# Fully automated (claim pending runs — see docs/local-autopkg-runner.md):
+#   ./AutoPkg/scripts/poll_local_autopkg.sh -b https://app.example.com -t "$LOCAL_RUNNER_TOKEN"
 
 set -euo pipefail
 

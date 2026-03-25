@@ -450,6 +450,27 @@ export interface UiSettingsRead {
   autopkg_runner_mode: string
 }
 
+/** GET/PATCH /settings/munki-repo-basic-auth — JWT + admin.settings */
+export interface MunkiRepoBasicAuthRead {
+  enabled: boolean
+  username: string
+  env_override_active: boolean
+}
+
+export interface MunkiRepoBasicAuthPatchBody {
+  enabled: boolean
+  username?: string
+  password?: string | null
+}
+
+export interface MunkiRepoBasicAuthPatchResponse {
+  enabled: boolean
+  username: string
+  env_override_active: boolean
+  /** Present once after setting a new password */
+  client_authorization_header?: string | null
+}
+
 export interface ClientMachineSummary {
   id: string
   serial_number: string
@@ -532,4 +553,11 @@ export interface FleetComplianceOverview {
   checked_in_last_7_days: number
   stale_over_30_days: number
   compliance_percentage: number
+}
+
+/** GET /reports/fleet-activity */
+export interface FleetActivityTimeseries {
+  days: number
+  checkins_by_day: CheckinHistoryPoint[]
+  install_rows_by_day: CheckinHistoryPoint[]
 }

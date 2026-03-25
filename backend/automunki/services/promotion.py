@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from automunki.models.munki import (
     Catalog,
@@ -15,6 +16,7 @@ from automunki.models.munki import (
     PromotionStrategy,
 )
 from automunki.services.audit import create_audit_entry
+from automunki.services.munki import sync_pkginfo_raw_plist
 
 logger = structlog.get_logger()
 
@@ -45,9 +47,17 @@ async def promote_pkginfo(
     if existing.scalar_one_or_none():
         return True
 
+    before_catalogs = [c.name for c in pkg.catalogs]
+
     session.add(PkgInfoCatalog(pkg_info_id=pkg_info_id, catalog_id=target_catalog_id))
 
-    current_catalogs = [c.name for c in pkg.catalogs]
+    await session.flush()
+    pkg_sync = (
+        await session.execute(select(PkgInfo).options(selectinload(PkgInfo.catalogs)).where(PkgInfo.id == pkg_info_id))
+    ).scalar_one()
+    sync_pkginfo_raw_plist(pkg_sync)
+
+    after_catalogs = [c.name for c in pkg_sync.catalogs]
     await create_audit_entry(
         session,
         action="promote",
@@ -56,8 +66,8 @@ async def promote_pkginfo(
         entity_name=f"{pkg.name} {pkg.version}",
         user_id=user_id,
         user_email=user_email,
-        before_snapshot={"catalogs": current_catalogs},
-        after_snapshot={"catalogs": current_catalogs + [target_catalog.name]},
+        before_snapshot={"catalogs": before_catalogs},
+        after_snapshot={"catalogs": after_catalogs},
         notes=f"Promoted to {target_catalog.name}",
     )
 

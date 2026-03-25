@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     munki_repo_pkg_base_url: str = ""
     munki_repo_icon_base_url: str = ""
 
+    #: When both are non-empty, ``/repo`` uses these for HTTP Basic (overrides DB).
+    munki_repo_basic_auth_user: str = ""
+    munki_repo_basic_auth_password: str = ""
+
     #: Directory for UI software icons (PNG). Empty = auto-detect ``<repo>/frontend/public/icons``.
     ui_icons_directory: str = ""
 
@@ -60,6 +64,10 @@ class Settings(BaseSettings):
     #: Default AutoPkg execution target when the UI does not send ``runner``:
     #: ``github`` = dispatch GitHub Actions; ``local`` = create run only (execute on a Mac).
     autopkg_runner_mode: Literal["github", "local"] = "github"
+
+    #: Shared secret for the local AutoPkg daemon (``poll_local_autopkg.sh``). When set,
+    #: ``Authorization: Bearer <token>`` is accepted for claim + runner API paths (see RBAC middleware).
+    local_runner_token: str = ""
 
     @field_validator("autopkg_runner_mode", mode="before")
     @classmethod
